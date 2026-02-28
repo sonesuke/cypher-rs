@@ -1,0 +1,29 @@
+[tools]
+
+[tasks.test]
+description = "Run tests"
+run = "cargo test"
+
+[tasks.test-coverage]
+description = "Run tests with coverage"
+run = "cargo llvm-cov --features integration-tests"
+
+[tasks.test-coverage-lcov]
+description = "Generate lcov.info"
+run = "cargo llvm-cov --lcov --output-path lcov.info --features integration-tests"
+
+[tasks.clippy]
+description = "Run clippy with auto-fix"
+run = "cargo clippy --fix --allow-dirty --allow-staged -- -D warnings"
+
+[tasks.fmt]
+description = "Format code"
+run = "cargo fmt"
+
+[tasks.check]
+description = "Run cargo check"
+run = "cargo check"
+
+[tasks.pre-commit]
+description = "Run pre-commit checks with auto-fix"
+depends = ["fmt", "clippy", "test"]

@@ -1,0 +1,13 @@
+/target
+/lcov.info
+.claude/worktrees/
+
+# PR-Healer runtime state
+agents/pr-header/progress.log
+
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
