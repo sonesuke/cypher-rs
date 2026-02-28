@@ -1,0 +1,128 @@
+//
+// Cypher Grammar for cypher-rs
+//
+// Based on openCypher syntax (http://opencypher.org/)
+// Implements a subset of Cypher with aggregate functions (COUNT, SUM)
+//
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+//
+// Top-level Query Structure
+//
+// A query consists of a MATCH clause, an optional WHERE clause, and a RETURN clause.
+// Example: MATCH (n:UC) WHERE n.id = "UC_001" RETURN n
+// Example: MATCH (n) RETURN COUNT(n)
+//
+query = { MATCH ~ pattern ~ (WHERE ~ where_clause)? ~ RETURN ~ return_clause }
+
+// Keywords (case-insensitive)
+MATCH    = { ^"MATCH" }
+WHERE    = { ^"WHERE" }
+RETURN   = { ^"RETURN" }
+AND      = { ^"AND" }
+OR       = { ^"OR" }
+CONTAINS = { ^"CONTAINS" }
+AS       = { ^"AS" }
+COUNT    = { ^"COUNT" }
+SUM      = { ^"SUM" }
+
+//
+// Pattern Matching
+//
+// Defines the graph pattern to search for.
+// Supported patterns:
+// - Node only: (n:Label)
+// - Relationship: (n)-[r:Type]->(m)
+//
+pattern = { pattern_part ~ ("," ~ pattern_part)* }
+
+pattern_part = { node_pattern ~ (relationship_pattern ~ node_pattern)* }
+
+// Node Pattern: (variable:Label)
+node_pattern = { "(" ~ SP? ~ (variable ~ SP?)? ~ (node_labels ~ SP?)? ~ ")" }
+
+// Relationship Pattern: -[variable:Type]-> or <...- or -...-
+relationship_pattern = {
+    (left_arrow ~ SP? ~ dash ~ SP? ~ relationship_detail? ~ SP? ~ dash ~ SP? ~ right_arrow)
+    | (left_arrow ~ SP? ~ dash ~ SP? ~ relationship_detail? ~ SP? ~ dash)
+    | (dash ~ SP? ~ relationship_detail? ~ SP? ~ dash ~ SP? ~ right_arrow)
+    | (dash ~ SP? ~ relationship_detail? ~ SP? ~ dash)
+}
+
+relationship_detail = { "[" ~ SP? ~ (variable ~ SP?)? ~ (relationship_types ~ SP?)? ~ (range_literal ~ SP?)? ~ "]" }
+
+range_literal = { "*" ~ range_quantifier? }
+range_quantifier = { (range_start? ~ ".." ~ range_end?) | range_exact }
+range_start = @{ number_literal }
+range_end   = @{ number_literal }
+range_exact = @{ number_literal }
+
+// Labels and Types
+node_labels = { node_label ~ (SP? ~ node_label)* }
+node_label = { ":" ~ SP? ~ label_name }
+
+relationship_types = { ":" ~ SP? ~ rel_type_name ~ (SP? ~ "|" ~ ":"? ~ SP? ~ rel_type_name)* }
+
+//
+// Where Clause
+//
+// Filters the results based on boolean expressions.
+//
+where_clause = { expression }
+
+//
+// Return Clause
+//
+// Specifies what to include in the result set.
+// Supports aliasing with AS.
+// Supports aggregate functions like COUNT(n) or SUM(n.property)
+//
+return_clause = { return_item ~ ("," ~ SP? ~ return_item)* }
+return_item = { expression ~ (AS ~ variable)? }
+
+//
+// Expressions
+//
+// Boolean logic (OR, AND) and comparisons.
+// Also supports aggregate function calls.
+//
+expression = { or_expression }
+
+or_expression = { and_expression ~ (OR ~ and_expression)* }
+
+and_expression = { comparison_expression ~ (AND ~ comparison_expression)* }
+
+comparison_expression = { aggregate_call | property_or_variable ~ (SP? ~ comp_op ~ SP? ~ term)? }
+
+// Property Access: n.id
+property_or_variable = { variable ~ (SP? ~ "." ~ SP? ~ property_name)? }
+
+// Aggregate Function Call: COUNT(n) or SUM(n.property)
+aggregate_call = { (COUNT | SUM) ~ SP? ~ "(" ~ SP? ~ variable ~ (SP? ~ "." ~ SP? ~ property_name)? ~ SP? ~ ")" }
+
+// Term: Literal, aggregate call, or another property/variable
+term = { aggregate_call | literal | property_or_variable }
+
+// Comparison Operators
+comp_op = { "<=" | ">=" | "<>" | "=" | "<" | ">" | CONTAINS }
+
+//
+// Basic Tokens
+//
+variable      = @{ symbolic_name }
+label_name    = @{ symbolic_name }
+rel_type_name = @{ symbolic_name }
+property_name = @{ symbolic_name }
+
+symbolic_name = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+literal = { string_literal | number_literal }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+number_literal = @{ ASCII_DIGIT+ }
+
+// Symbols
+left_arrow  = { "<" }
+right_arrow = { ">" }
+dash        = { "-" }
+SP          = _{ " " | "\t" }
