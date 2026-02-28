@@ -3,12 +3,12 @@
 //! This module provides the core query execution functionality for the Cypher-RS library.
 //! It is organized into submodules for better separation of concerns:
 
-pub mod storage;
-pub mod functions;
 pub mod executor;
+pub mod functions;
+pub mod storage;
 
-use crate::parser;
 use crate::graph::Graph;
+use crate::parser;
 pub use executor::{EntityId, QueryExecutor};
 
 use serde_json::Value;
@@ -89,9 +89,11 @@ pub fn execute(query: &str, graph: &Graph) -> Result<QueryResult> {
 }
 
 // Re-exports for convenience
-pub use storage::{Storage, SyncStorage, JsonStorage, MemoryStorage, MemoryStorageBuilder};
-pub use storage::{StorageError, StorageResult, StorageFeature, StorageMetadata};
-pub use functions::{EvalContext, ExpressionContext, AggregateEvaluator, FunctionError, FunctionResult};
+pub use functions::{
+    AggregateEvaluator, EvalContext, ExpressionContext, FunctionError, FunctionResult,
+};
+pub use storage::{JsonStorage, MemoryStorage, MemoryStorageBuilder, Storage, SyncStorage};
+pub use storage::{StorageError, StorageFeature, StorageMetadata, StorageResult};
 
 #[cfg(test)]
 mod tests {

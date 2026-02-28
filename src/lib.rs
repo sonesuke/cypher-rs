@@ -50,9 +50,9 @@ use serde_json::Value;
 use std::fmt;
 
 pub use config::GraphConfig;
+pub use engine::storage::SyncStorage;
 pub use engine::{EngineError, QueryResult, Result};
 pub use engine::{JsonStorage, MemoryStorage, MemoryStorageBuilder};
-pub use engine::storage::SyncStorage;
 pub use graph::{Edge, Graph, Node};
 pub use schema::{SchemaAnalyzer, SchemaDetection, SchemaError};
 
@@ -272,7 +272,8 @@ impl CypherEngine {
         }
 
         // Group nodes by label
-        let mut labels_by_label: std::collections::HashMap<String, Vec<&graph::Node>> = std::collections::HashMap::new();
+        let mut labels_by_label: std::collections::HashMap<String, Vec<&graph::Node>> =
+            std::collections::HashMap::new();
         for node in &self.graph.nodes {
             let label = node.label.as_ref().unwrap_or(&"Node".to_string()).clone();
             labels_by_label.entry(label).or_default().push(node);
@@ -286,7 +287,7 @@ impl CypherEngine {
             let count = labels_by_label.get(label).map(|v| v.len()).unwrap_or(0);
             output.push_str(&format!("  (:{} {} nodes)\n", label, count));
         }
-        output.push_str("\n");
+        output.push('\n');
 
         // Output Properties per node type
         output.push_str("Properties:\n");
@@ -313,29 +314,51 @@ impl CypherEngine {
                 }
             }
         }
-        output.push_str("\n");
+        output.push('\n');
 
         // Output Relationship Types
         if !self.graph.edges.is_empty() {
             output.push_str("Relationship Types:\n");
 
             // Group relationships by type
-            let mut rel_types: std::collections::HashMap<String, (std::collections::HashSet<String>, std::collections::HashSet<String>)> = std::collections::HashMap::new();
+            let mut rel_types: std::collections::HashMap<
+                String,
+                (
+                    std::collections::HashSet<String>,
+                    std::collections::HashSet<String>,
+                ),
+            > = std::collections::HashMap::new();
 
             for edge in &self.graph.edges {
                 let from_label = self.graph.nodes[edge.from]
-                    .label.as_ref().unwrap_or(&"Node".to_string()).clone();
+                    .label
+                    .as_ref()
+                    .unwrap_or(&"Node".to_string())
+                    .clone();
                 let to_label = self.graph.nodes[edge.to]
-                    .label.as_ref().unwrap_or(&"Node".to_string()).clone();
+                    .label
+                    .as_ref()
+                    .unwrap_or(&"Node".to_string())
+                    .clone();
 
                 rel_types
                     .entry(edge.rel_type.clone())
-                    .or_insert_with(|| (std::collections::HashSet::new(), std::collections::HashSet::new()))
+                    .or_insert_with(|| {
+                        (
+                            std::collections::HashSet::new(),
+                            std::collections::HashSet::new(),
+                        )
+                    })
                     .0
                     .insert(from_label);
                 rel_types
                     .entry(edge.rel_type.clone())
-                    .or_insert_with(|| (std::collections::HashSet::new(), std::collections::HashSet::new()))
+                    .or_insert_with(|| {
+                        (
+                            std::collections::HashSet::new(),
+                            std::collections::HashSet::new(),
+                        )
+                    })
                     .1
                     .insert(to_label);
             }
@@ -475,9 +498,7 @@ mod tests {
         let engine = CypherEngine::from_json(&data, config).unwrap();
 
         // Count relationships
-        let result = engine
-            .execute("MATCH (u)-[]->(v) RETURN COUNT(u)")
-            .unwrap();
+        let result = engine.execute("MATCH (u)-[]->(v) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
 
         // Find Alice's friends
@@ -651,7 +672,9 @@ mod tests {
         assert_eq!(primary.path, "users");
         assert_eq!(primary.recommended_id_field, Some("id".to_string()));
         assert_eq!(primary.recommended_label_field, Some("role".to_string()));
-        assert!(primary.recommended_relation_fields.contains(&"friends".to_string()));
+        assert!(primary
+            .recommended_relation_fields
+            .contains(&"friends".to_string()));
     }
 
     #[test]
@@ -687,9 +710,7 @@ mod tests {
 
         // Test relationship queries
         // 1->2, 1->3, 2->1, 3->2 = 4 edges total
-        let result = engine
-            .execute("MATCH (u)-[]->(v) RETURN COUNT(u)")
-            .unwrap();
+        let result = engine.execute("MATCH (u)-[]->(v) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(4));
     }
 

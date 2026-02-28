@@ -1,4 +1,4 @@
-use super::storage_trait::{StorageError, StorageResult, StorageFeature, StorageMetadata, SyncStorage};
+use super::storage_trait::{StorageFeature, StorageMetadata, StorageResult, SyncStorage};
 use crate::config::GraphConfig;
 use crate::graph::{Graph, Node};
 use std::sync::Arc;
@@ -206,8 +206,13 @@ mod tests {
 
         assert_eq!(metadata.name, "memory");
         assert!(metadata.features.contains(&StorageFeature::ConcurrentReads));
-        assert!(metadata.features.contains(&StorageFeature::ConcurrentWrites));
-        assert_eq!(metadata.properties.get("volatile"), Some(&"true".to_string()));
+        assert!(metadata
+            .features
+            .contains(&StorageFeature::ConcurrentWrites));
+        assert_eq!(
+            metadata.properties.get("volatile"),
+            Some(&"true".to_string())
+        );
     }
 
     #[test]

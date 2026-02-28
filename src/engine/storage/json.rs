@@ -1,9 +1,11 @@
-use super::storage_trait::{StorageError, StorageResult, StorageFeature, StorageMetadata, SyncStorage};
-use crate::graph::{Edge, Graph, Node};
+use super::storage_trait::{
+    StorageError, StorageFeature, StorageMetadata, StorageResult, SyncStorage,
+};
 use crate::config::GraphConfig;
-use serde_json::{json, Value};
-use std::path::Path;
+use crate::graph::{Edge, Graph, Node};
+use serde_json::Value;
 use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 /// JSON-based storage backend.
@@ -50,6 +52,7 @@ impl JsonStorage {
     }
 
     /// Create a new JsonStorage from a JSON string.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(json_str: &str) -> StorageResult<Self> {
         let data: Value = serde_json::from_str(json_str)?;
         Ok(Self::from_value(data))
@@ -108,10 +111,12 @@ pub fn build_graph_from_json(json: &Value, config: &GraphConfig) -> StorageResul
             })?
             .to_string();
 
-        let label = config
-            .label_field
-            .as_ref()
-            .and_then(|field| node_json.get(field).and_then(|v| v.as_str()).map(String::from));
+        let label = config.label_field.as_ref().and_then(|field| {
+            node_json
+                .get(field)
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        });
 
         let node = Node::new(id.clone(), label, node_json.clone());
         graph.add_node(node);
@@ -177,6 +182,7 @@ fn navigate_json_path<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_json_storage_from_value() {

@@ -87,7 +87,10 @@ pub struct SchemaDetection {
 
 impl SchemaDetection {
     /// Create a new schema detection result.
-    pub fn new(array_schemas: Vec<ArraySchema>, primary_recommendation: Option<ArraySchema>) -> Self {
+    pub fn new(
+        array_schemas: Vec<ArraySchema>,
+        primary_recommendation: Option<ArraySchema>,
+    ) -> Self {
         Self {
             array_schemas,
             primary_recommendation,
@@ -164,7 +167,9 @@ impl SchemaDetection {
         let mut output = String::new();
 
         // Find the primary schema
-        let primary = self.primary_recommendation.as_ref()
+        let primary = self
+            .primary_recommendation
+            .as_ref()
             .or_else(|| self.array_schemas.first());
 
         let Some(schema) = primary else {
@@ -181,11 +186,12 @@ impl SchemaDetection {
 
         // Infer labels from data (use the label field values)
         // For now, we'll use the path as the node type if no label field
-        let node_type_prefix = schema.path.split('.').last().unwrap_or(&schema.path);
+        let node_type_prefix = schema.path.split('.').next_back().unwrap_or(&schema.path);
         let has_label_field = schema.recommended_label_field.is_some();
 
         // Collect properties by analyzing the fields
-        let mut all_properties: Vec<String> = schema.fields
+        let all_properties: Vec<String> = schema
+            .fields
             .iter()
             .filter(|f| !f.is_relation_candidate)
             .map(|f| {
@@ -217,7 +223,11 @@ impl SchemaDetection {
         for rel_field in &schema.recommended_relation_fields {
             // Self-referential relationship (most common case)
             let rel_type = rel_field;
-            relations.push((node_type_prefix.to_string(), rel_type.clone(), node_type_prefix.to_string()));
+            relations.push((
+                node_type_prefix.to_string(),
+                rel_type.clone(),
+                node_type_prefix.to_string(),
+            ));
         }
 
         // Output Node Types
@@ -225,14 +235,14 @@ impl SchemaDetection {
         for label in &labels {
             output.push_str(&format!("  (:{})\n", label));
         }
-        output.push_str("\n");
+        output.push('\n');
 
         // Output Properties (grouped by node type)
         output.push_str("Properties:\n");
         for (node_type, props) in &properties_by_label {
             output.push_str(&format!("  :{} {{{}}}\n", node_type, props.join(", ")));
         }
-        output.push_str("\n");
+        output.push('\n');
 
         // Output Relationship Types
         if !relations.is_empty() {
@@ -255,18 +265,21 @@ impl SchemaDetection {
     /// (:User {id, name, role})-[:FRIENDS]->(:User)
     /// ```
     pub fn to_pattern(&self) -> String {
-        let primary = self.primary_recommendation.as_ref()
+        let primary = self
+            .primary_recommendation
+            .as_ref()
             .or_else(|| self.array_schemas.first());
 
         let Some(schema) = primary else {
             return "()".to_string();
         };
 
-        let node_type = schema.path.split('.').last().unwrap_or(&schema.path);
+        let node_type = schema.path.split('.').next_back().unwrap_or(&schema.path);
         let id_field = schema.recommended_id_field.as_deref().unwrap_or("id");
 
         // Build properties list (exclude relations)
-        let properties: Vec<String> = schema.fields
+        let properties: Vec<String> = schema
+            .fields
             .iter()
             .filter(|f| !f.is_relation_candidate && f.name != id_field)
             .map(|f| f.name.clone())
@@ -276,13 +289,21 @@ impl SchemaDetection {
         let node_pattern = if properties.is_empty() {
             format!("(:{{{}:{}}})", node_type, id_field)
         } else {
-            format!("(:{} {{{}, {}}})", node_type, id_field, properties.join(", "))
+            format!(
+                "(:{} {{{}, {}}})",
+                node_type,
+                id_field,
+                properties.join(", ")
+            )
         };
 
         // Build relationship patterns
         let mut patterns = Vec::new();
         for rel_field in &schema.recommended_relation_fields {
-            patterns.push(format!("{}-[:{}]->{}", node_pattern, rel_field, node_pattern));
+            patterns.push(format!(
+                "{}-[:{}]->{}",
+                node_pattern, rel_field, node_pattern
+            ));
         }
 
         if patterns.is_empty() {
@@ -504,7 +525,8 @@ fn analyze_field(
     // Check if this could be a relation field (array of IDs)
     let is_relation_candidate = matches!(field_type, FieldType::Array)
         && array_element_types.len() <= 2
-        && (array_element_types.contains(&FieldType::String) || array_element_types.contains(&FieldType::Number));
+        && (array_element_types.contains(&FieldType::String)
+            || array_element_types.contains(&FieldType::Number));
 
     NodeFieldInfo {
         name: name.to_string(),
@@ -549,7 +571,10 @@ fn select_primary_schema(schemas: &[ArraySchema]) -> Option<ArraySchema> {
         score -= (path_depth as i32) * 10;
 
         // Prefer certain path names
-        if schema.path.contains("node") || schema.path.contains("user") || schema.path.contains("item") {
+        if schema.path.contains("node")
+            || schema.path.contains("user")
+            || schema.path.contains("item")
+        {
             score += 50;
         }
 
@@ -598,7 +623,9 @@ mod tests {
         let result = SchemaAnalyzer::analyze(&data).unwrap();
         let schema = &result.primary_recommendation.as_ref().unwrap();
         assert_eq!(schema.recommended_id_field, Some("id".to_string()));
-        assert!(schema.recommended_relation_fields.contains(&"friends".to_string()));
+        assert!(schema
+            .recommended_relation_fields
+            .contains(&"friends".to_string()));
     }
 
     #[test]

@@ -1,5 +1,5 @@
-use crate::graph::{Graph, Node};
 use crate::config::GraphConfig;
+use crate::graph::{Graph, Node};
 use async_trait::async_trait;
 
 /// Type alias for optional node result to avoid >> parsing issues
@@ -78,7 +78,6 @@ impl StorageMetadata {
             features: Vec::new(),
             properties: std::collections::HashMap::new(),
         }
-
     }
 
     /// Add a feature to the metadata.

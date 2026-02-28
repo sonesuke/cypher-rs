@@ -45,10 +45,7 @@ impl Graph {
 
     /// Get all edges from a given node index.
     pub fn get_outgoing_edges(&self, from_idx: usize) -> Vec<&Edge> {
-        self.edges
-            .iter()
-            .filter(|e| e.from == from_idx)
-            .collect()
+        self.edges.iter().filter(|e| e.from == from_idx).collect()
     }
 
     /// Get all edges to a given node index.
@@ -140,7 +137,11 @@ mod tests {
     #[test]
     fn test_add_node() {
         let mut graph = Graph::new();
-        let node = Node::new("1".to_string(), Some("User".to_string()), json!({"name": "Alice"}));
+        let node = Node::new(
+            "1".to_string(),
+            Some("User".to_string()),
+            json!({"name": "Alice"}),
+        );
         let idx = graph.add_node(node);
         assert_eq!(idx, 0);
         assert_eq!(graph.nodes.len(), 1);
@@ -149,7 +150,11 @@ mod tests {
     #[test]
     fn test_get_node() {
         let mut graph = Graph::new();
-        let node = Node::new("1".to_string(), Some("User".to_string()), json!({"name": "Alice"}));
+        let node = Node::new(
+            "1".to_string(),
+            Some("User".to_string()),
+            json!({"name": "Alice"}),
+        );
         graph.add_node(node);
         assert!(graph.get_node("1").is_some());
         assert!(graph.get_node("2").is_none());
@@ -168,7 +173,11 @@ mod tests {
 
     #[test]
     fn test_node_get_property() {
-        let node = Node::new("1".to_string(), Some("User".to_string()), json!({"name": "Alice", "age": 30}));
+        let node = Node::new(
+            "1".to_string(),
+            Some("User".to_string()),
+            json!({"name": "Alice", "age": 30}),
+        );
         assert_eq!(
             node.get_property_as_string("name"),
             Some("Alice".to_string())

@@ -1,16 +1,20 @@
-use crate::graph::Graph;
-use crate::parser::{ast};
 use crate::engine::functions::EvalContext;
+use crate::graph::Graph;
+use crate::parser::ast;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::{QueryResult, EngineError, Result};
+use super::{EngineError, QueryResult, Result};
 
 /// Entity ID type for tracking matched nodes and relationships during query execution.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EntityId {
     Node(usize),
-    Relationship { from_idx: usize, to_idx: usize, rel: String },
+    Relationship {
+        from_idx: usize,
+        to_idx: usize,
+        rel: String,
+    },
 }
 
 /// Type alias for variable bindings during query execution.
@@ -65,9 +69,11 @@ impl QueryExecutor {
         }
 
         // 3. Project with RETURN
-        let has_aggregate = query.return_clause.items.iter().any(|item| {
-            matches!(&item.expression, ast::Expression::Aggregate(_))
-        });
+        let has_aggregate = query
+            .return_clause
+            .items
+            .iter()
+            .any(|item| matches!(&item.expression, ast::Expression::Aggregate(_)));
 
         if has_aggregate {
             Self::execute_aggregate_return(&query.return_clause, bindings_list, graph)
@@ -87,16 +93,13 @@ impl QueryExecutor {
         let mut values = serde_json::Map::new();
 
         for item in &return_clause.items {
-            let column_name = item
-                .alias
-                .clone()
-                .unwrap_or_else(|| {
-                    if let ast::Expression::Aggregate(agg) = &item.expression {
-                        AggregateEvaluator::column_name(agg)
-                    } else {
-                        Self::expression_column_name(&item.expression)
-                    }
-                });
+            let column_name = item.alias.clone().unwrap_or_else(|| {
+                if let ast::Expression::Aggregate(agg) = &item.expression {
+                    AggregateEvaluator::column_name(agg)
+                } else {
+                    Self::expression_column_name(&item.expression)
+                }
+            });
 
             let value = match &item.expression {
                 ast::Expression::Aggregate(agg) => {
@@ -208,7 +211,7 @@ impl QueryExecutor {
                     node_pat
                         .labels
                         .iter()
-                        .any(|l| node.label.as_ref().map_or(false, |label| label == l))
+                        .any(|l| node.label.as_ref() == Some(l))
                 };
 
                 if !label_match {
@@ -266,10 +269,15 @@ impl QueryExecutor {
 
                 // Single hop matching
                 let neighbors = match rel_pat.direction {
-                    ast::Direction::Right => forward_adj.get(&start_idx).cloned().unwrap_or_default(),
-                    ast::Direction::Left => backward_adj.get(&start_idx).cloned().unwrap_or_default(),
+                    ast::Direction::Right => {
+                        forward_adj.get(&start_idx).cloned().unwrap_or_default()
+                    }
+                    ast::Direction::Left => {
+                        backward_adj.get(&start_idx).cloned().unwrap_or_default()
+                    }
                     ast::Direction::Both => {
-                        let mut neighbors = forward_adj.get(&start_idx).cloned().unwrap_or_default();
+                        let mut neighbors =
+                            forward_adj.get(&start_idx).cloned().unwrap_or_default();
                         neighbors.extend(backward_adj.get(&start_idx).cloned().unwrap_or_default());
                         neighbors
                     }
@@ -295,7 +303,7 @@ impl QueryExecutor {
                         end_node_pat
                             .labels
                             .iter()
-                            .any(|l| node.label.as_ref().map_or(false, |label| label == l))
+                            .any(|l| node.label.as_ref() == Some(l))
                     };
 
                     if label_match {
@@ -336,12 +344,12 @@ impl QueryExecutor {
 
     fn evaluate_expression(expr: &ast::Expression, bindings: &Bindings, graph: &Graph) -> bool {
         match expr {
-            ast::Expression::And(exprs) => {
-                exprs.iter().all(|e| Self::evaluate_expression(e, bindings, graph))
-            }
-            ast::Expression::Or(exprs) => {
-                exprs.iter().any(|e| Self::evaluate_expression(e, bindings, graph))
-            }
+            ast::Expression::And(exprs) => exprs
+                .iter()
+                .all(|e| Self::evaluate_expression(e, bindings, graph)),
+            ast::Expression::Or(exprs) => exprs
+                .iter()
+                .any(|e| Self::evaluate_expression(e, bindings, graph)),
             ast::Expression::Comparison(comp) => {
                 let left_val = Self::evaluate_property_or_variable(&comp.left, bindings, graph);
 
@@ -377,7 +385,11 @@ impl QueryExecutor {
         }
     }
 
-    fn evaluate_expression_value(expr: &ast::Expression, bindings: &Bindings, graph: &Graph) -> Value {
+    fn evaluate_expression_value(
+        expr: &ast::Expression,
+        bindings: &Bindings,
+        graph: &Graph,
+    ) -> Value {
         match expr {
             ast::Expression::Comparison(comp) => {
                 if comp.operator.is_none() && comp.right.is_none() {

@@ -3,16 +3,16 @@
 //! This module provides a pluggable storage interface that allows different
 //! data sources to be used with the query engine.
 
-pub mod storage_trait;
 pub mod json;
 pub mod memory;
+pub mod storage_trait;
 
 // Re-export commonly used types
-pub use storage_trait::{
-    Storage, SyncStorage, StorageError, StorageResult, StorageFeature, StorageMetadata,
-};
 pub use json::JsonStorage;
 pub use memory::{MemoryStorage, MemoryStorageBuilder};
+pub use storage_trait::{
+    Storage, StorageError, StorageFeature, StorageMetadata, StorageResult, SyncStorage,
+};
 
 #[cfg(test)]
 mod tests {
