@@ -13,3 +13,16 @@ anyhow = "1.0"
 async-trait = "0.1"
 
 [dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "parser"
+harness = false
+
+[[bench]]
+name = "executor"
+harness = false
+
+[[bench]]
+name = "schema"
+harness = false
