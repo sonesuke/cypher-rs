@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use cypher_rs::schema::SchemaAnalyzer;
 use serde_json::json;
 
@@ -16,7 +16,10 @@ fn create_medium_schema_data(field_count: usize) -> serde_json::Value {
     for i in 0..10 {
         let mut obj = serde_json::Map::new();
         obj.insert("id".to_string(), json!(i.to_string()));
-        obj.insert("role".to_string(), json!(if i % 2 == 0 { "admin" } else { "user" }));
+        obj.insert(
+            "role".to_string(),
+            json!(if i % 2 == 0 { "admin" } else { "user" }),
+        );
         obj.insert("age".to_string(), json!(20 + i));
         obj.insert("name".to_string(), json!(format!("User{}", i)));
         obj.insert("email".to_string(), json!(format!("user{}@example.com", i)));

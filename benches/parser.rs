@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use cypher_rs::parser;
 
 fn bench_parse_simple(c: &mut Criterion) {
@@ -44,7 +44,8 @@ fn bench_parse_with_aggregate_sum(c: &mut Criterion) {
 }
 
 fn bench_parse_complex(c: &mut Criterion) {
-    let query = "MATCH (u:admin)-[:knows]->(f) WHERE f.age > 25 AND f.role = 'user' RETURN COUNT(f)";
+    let query =
+        "MATCH (u:admin)-[:knows]->(f) WHERE f.age > 25 AND f.role = 'user' RETURN COUNT(f)";
     c.bench_function("parse_complex", |b| {
         b.iter(|| parser::parse_query(black_box(query)));
     });
