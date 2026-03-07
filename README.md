@@ -145,6 +145,35 @@ let config = GraphConfig {
 let engine = CypherEngine::from_json(&data, config)?;
 ```
 
+### Root Objects as Nodes
+
+For hierarchical JSON data where the root object should be treated as a node with nested arrays:
+
+```rust
+use cypher_rs::CypherEngine;
+
+let data = json!({
+    "id": "US1234567",
+    "title": "Method for Processing Data",
+    "claims": [
+        { "id": "claim-1", "number": "1", "text": "A method comprising..." },
+        { "id": "claim-2", "number": "2", "text": "The method of claim 1..." }
+    ]
+});
+
+// Default label is "Root"
+let engine = CypherEngine::from_json_auto_as_root(&data)?;
+
+// Or specify a custom label
+let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent")?;
+
+// Query the patent
+let result = engine.execute("MATCH (p:Patent) RETURN p.title")?;
+
+// Traverse to claims
+let result = engine.execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) RETURN c.number")?;
+```
+
 ### Schema Analysis
 
 Get detailed schema information before creating the engine:

@@ -179,6 +179,92 @@ fn navigate_json_path<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
     Some(current)
 }
 
+/// Build a graph from a root object JSON value.
+///
+/// Creates a root node from the root object, then creates related nodes
+/// for each nested array and connects them with HAS_CHILD relationships.
+pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageResult<Graph> {
+    let mut graph = Graph::new();
+
+    // Get the root object
+    let root_obj = json
+        .as_object()
+        .ok_or_else(|| StorageError::InvalidData("Root is not an object".to_string()))?;
+
+    // Extract root node ID (try "id" first, then fall back to "root")
+    let root_id = root_obj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .or_else(|| root_obj.get("_id").and_then(|v| v.as_str()))
+        .unwrap_or("root")
+        .to_string();
+
+    // Create the root node with all root object data
+    let root_node = Node::new(root_id.clone(), Some(root_label.to_string()), json.clone());
+    let root_idx = graph.add_node(root_node);
+
+    // Find all nested arrays and create related nodes
+    for (field_name, field_value) in root_obj {
+        if let Some(arr) = field_value.as_array() {
+            // Skip empty arrays
+            if arr.is_empty() {
+                continue;
+            }
+
+            // Only process if elements are objects (potential nodes)
+            if let Some(first_obj) = arr.first() {
+                if !first_obj.is_object() {
+                    continue;
+                }
+
+                // Create nodes for each element in the array
+                for (idx, element) in arr.iter().enumerate() {
+                    if let Value::Object(obj) = element {
+                        // Get the element's ID
+                        let element_id = obj
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| obj.get("_id").and_then(|v| v.as_str()))
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                // Generate ID if none exists
+                                format!("{}-{}", field_name, idx)
+                            });
+
+                        // Get the element's label (try common label fields)
+                        let element_label = obj
+                            .get("type")
+                            .or_else(|| obj.get("role"))
+                            .or_else(|| obj.get("kind"))
+                            .or_else(|| obj.get("label"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .or_else(|| {
+                                // Use field name singularized as label
+                                if field_name.ends_with('s') {
+                                    Some(field_name[..field_name.len() - 1].to_string())
+                                } else {
+                                    Some(field_name.clone())
+                                }
+                            });
+
+                        // Create and add the related node
+                        let related_node =
+                            Node::new(element_id.clone(), element_label, element.clone());
+                        let related_idx = graph.add_node(related_node);
+
+                        // Create edge from root to related node
+                        let edge = Edge::new(root_idx, related_idx, "HAS_CHILD".to_string());
+                        graph.add_edge(edge);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(graph)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
