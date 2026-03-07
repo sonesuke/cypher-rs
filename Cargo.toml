@@ -13,7 +13,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "parser"
