@@ -1,5 +1,5 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use cypher_rs::{CypherEngine, GraphConfig};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use cypher_rs::CypherEngine;
 use serde_json::json;
 
 fn create_test_data(node_count: usize) -> serde_json::Value {
@@ -22,7 +22,7 @@ fn bench_execute_simple_match(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_simple_match", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (n) RETURN n.id")));
+        b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN n.id")));
     });
 }
 
@@ -31,7 +31,7 @@ fn bench_execute_with_label(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_with_label", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (n:admin) RETURN n.id")));
+        b.iter(|| engine.execute(std::hint::black_box("MATCH (n:admin) RETURN n.id")));
     });
 }
 
@@ -40,7 +40,11 @@ fn bench_execute_with_where(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_with_where", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (n) WHERE n.age > 25 RETURN n.id")));
+        b.iter(|| {
+            engine.execute(std::hint::black_box(
+                "MATCH (n) WHERE n.age > 25 RETURN n.id",
+            ))
+        });
     });
 }
 
@@ -49,7 +53,7 @@ fn bench_execute_count(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_count", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (n) RETURN COUNT(n)")));
+        b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN COUNT(n)")));
     });
 }
 
@@ -58,7 +62,7 @@ fn bench_execute_sum(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_sum", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (n) RETURN SUM(n.age)")));
+        b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN SUM(n.age)")));
     });
 }
 
@@ -67,7 +71,11 @@ fn bench_execute_with_relationship(c: &mut Criterion) {
     let engine = CypherEngine::from_json_auto(&data).unwrap();
 
     c.bench_function("execute_with_relationship", |b| {
-        b.iter(|| engine.execute(black_box("MATCH (a)-[:friends]->(b) RETURN a.id, b.id")));
+        b.iter(|| {
+            engine.execute(std::hint::black_box(
+                "MATCH (a)-[:friends]->(b) RETURN a.id, b.id",
+            ))
+        });
     });
 }
 
@@ -79,7 +87,7 @@ fn bench_execute_variable_graph_size(c: &mut Criterion) {
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| engine.execute(black_box("MATCH (n) RETURN n.id")));
+            b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN n.id")));
         });
     }
 
@@ -94,7 +102,7 @@ fn bench_execute_count_variable_graph_size(c: &mut Criterion) {
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| engine.execute(black_box("MATCH (n) RETURN COUNT(n)")));
+            b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN COUNT(n)")));
         });
     }
 
@@ -109,7 +117,7 @@ fn bench_execute_sum_variable_graph_size(c: &mut Criterion) {
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| engine.execute(black_box("MATCH (n) RETURN SUM(n.age)")));
+            b.iter(|| engine.execute(std::hint::black_box("MATCH (n) RETURN SUM(n.age)")));
         });
     }
 
