@@ -206,9 +206,11 @@ mod tests {
 
         assert_eq!(metadata.name, "memory");
         assert!(metadata.features.contains(&StorageFeature::ConcurrentReads));
-        assert!(metadata
-            .features
-            .contains(&StorageFeature::ConcurrentWrites));
+        assert!(
+            metadata
+                .features
+                .contains(&StorageFeature::ConcurrentWrites)
+        );
         assert_eq!(
             metadata.properties.get("volatile"),
             Some(&"true".to_string())

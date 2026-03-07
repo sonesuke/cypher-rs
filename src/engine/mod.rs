@@ -48,10 +48,10 @@ impl QueryResult {
             .map(|row| {
                 let mut obj = serde_json::Map::new();
                 for col in &self.columns {
-                    if let Some(row_obj) = row.as_object() {
-                        if let Some(val) = row_obj.get(col) {
-                            obj.insert(col.clone(), val.clone());
-                        }
+                    if let Some(row_obj) = row.as_object()
+                        && let Some(val) = row_obj.get(col)
+                    {
+                        obj.insert(col.clone(), val.clone());
                     }
                 }
                 Value::Object(obj)

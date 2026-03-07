@@ -1,8 +1,8 @@
 pub mod ast;
 
-use anyhow::{anyhow, Result};
-use pest::iterators::Pair;
+use anyhow::{Result, anyhow};
 use pest::Parser;
+use pest::iterators::Pair;
 use pest_derive::Parser;
 
 #[derive(Parser)]
