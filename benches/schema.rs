@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use cypher_rs::schema::SchemaAnalyzer;
 use serde_json::json;
 
@@ -59,35 +59,35 @@ fn create_array_schema_data(array_count: usize) -> serde_json::Value {
 fn bench_analyze_simple(c: &mut Criterion) {
     let data = create_simple_schema_data();
     c.bench_function("analyze_simple", |b| {
-        b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
     });
 }
 
 fn bench_analyze_medium(c: &mut Criterion) {
     let data = create_medium_schema_data(5);
     c.bench_function("analyze_medium", |b| {
-        b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
     });
 }
 
 fn bench_analyze_large(c: &mut Criterion) {
     let data = create_medium_schema_data(20);
     c.bench_function("analyze_large", |b| {
-        b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
     });
 }
 
 fn bench_analyze_nested(c: &mut Criterion) {
     let data = create_nested_schema_data(5);
     c.bench_function("analyze_nested", |b| {
-        b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
     });
 }
 
 fn bench_analyze_multiple_arrays(c: &mut Criterion) {
     let data = create_array_schema_data(10);
     c.bench_function("analyze_multiple_arrays", |b| {
-        b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
     });
 }
 
@@ -101,7 +101,7 @@ fn bench_analyze_variable_field_count(c: &mut Criterion) {
             BenchmarkId::from_parameter(field_count),
             field_count,
             |b, _| {
-                b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+                b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
             },
         );
     }
@@ -116,7 +116,7 @@ fn bench_analyze_variable_nesting_depth(c: &mut Criterion) {
         let data = create_nested_schema_data(*depth);
 
         group.bench_with_input(BenchmarkId::from_parameter(depth), depth, |b, _| {
-            b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+            b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
         });
     }
 
@@ -133,7 +133,7 @@ fn bench_analyze_variable_array_count(c: &mut Criterion) {
             BenchmarkId::from_parameter(array_count),
             array_count,
             |b, _| {
-                b.iter(|| SchemaAnalyzer::analyze(black_box(&data)));
+                b.iter(|| SchemaAnalyzer::analyze(std::hint::black_box(&data)));
             },
         );
     }
@@ -144,7 +144,7 @@ fn bench_analyze_variable_array_count(c: &mut Criterion) {
 fn bench_infer_graph_config(c: &mut Criterion) {
     let data = create_simple_schema_data();
     c.bench_function("infer_graph_config", |b| {
-        b.iter(|| SchemaAnalyzer::infer_graph_config(black_box(&data)));
+        b.iter(|| SchemaAnalyzer::infer_graph_config(std::hint::black_box(&data)));
     });
 }
 
@@ -153,7 +153,7 @@ fn bench_to_neo4j_schema(c: &mut Criterion) {
     let schema = SchemaAnalyzer::analyze(&data).unwrap();
 
     c.bench_function("to_neo4j_schema", |b| {
-        b.iter(|| black_box(&schema).to_neo4j_schema());
+        b.iter(|| std::hint::black_box(&schema).to_neo4j_schema());
     });
 }
 
