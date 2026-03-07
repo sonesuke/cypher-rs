@@ -148,6 +148,7 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
+            root_object_config: None,
         };
 
         let graph = storage.load_graph_sync(&config).unwrap();

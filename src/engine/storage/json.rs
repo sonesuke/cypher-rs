@@ -1,7 +1,7 @@
 use super::storage_trait::{
     StorageError, StorageFeature, StorageMetadata, StorageResult, SyncStorage,
 };
-use crate::config::GraphConfig;
+use crate::config::{GraphConfig, RootObjectConfig};
 use crate::graph::{Edge, Graph, Node};
 use serde_json::Value;
 use std::fs;
@@ -87,6 +87,12 @@ impl SyncStorage for JsonStorage {
 
 /// Build a graph from a JSON value using the given configuration.
 pub fn build_graph_from_json(json: &Value, config: &GraphConfig) -> StorageResult<Graph> {
+    // If root_object_config is present, use root object mode
+    if let Some(root_config) = &config.root_object_config {
+        return build_graph_from_root_object(json, root_config);
+    }
+
+    // Otherwise, use the standard array-based mode
     let mut graph = Graph::new();
 
     // Navigate to the node array
@@ -162,6 +168,94 @@ pub fn build_graph_from_json(json: &Value, config: &GraphConfig) -> StorageResul
     Ok(graph)
 }
 
+/// Build a graph from a root object JSON value.
+///
+/// Creates a root node from the root object, then creates related nodes
+/// for each nested array and connects them with HAS_CHILD relationships.
+fn build_graph_from_root_object(json: &Value, config: &RootObjectConfig) -> StorageResult<Graph> {
+    let mut graph = Graph::new();
+
+    // Get the root object
+    let root_obj = json
+        .as_object()
+        .ok_or_else(|| StorageError::InvalidData("Root is not an object".to_string()))?;
+
+    // Extract root node ID
+    let root_id = root_obj
+        .get(&config.id_field)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            StorageError::InvalidData(format!("Root object missing id field: {}", config.id_field))
+        })?
+        .to_string();
+
+    // Extract root node label (if specified)
+    let root_label = config
+        .label_field
+        .as_ref()
+        .and_then(|field| root_obj.get(field))
+        .and_then(|v| v.as_str())
+        .or(Some(config.primary_label.as_str()))
+        .map(String::from);
+
+    // Create the root node
+    let root_node = Node::new(root_id.clone(), root_label.clone(), json.clone());
+    let root_idx = graph.add_node(root_node);
+
+    // Process each related node array
+    for related_array_config in &config.related_node_arrays {
+        if let Some(array_value) = root_obj.get(&related_array_config.field_name) {
+            if let Some(arr) = array_value.as_array() {
+                // Create nodes for each element in the array
+                for (idx, element) in arr.iter().enumerate() {
+                    // Get the element's ID
+                    let element_id = element
+                        .get(&related_array_config.id_field)
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            StorageError::InvalidData(format!(
+                                "Element in {} at index {} missing id field: {}",
+                                related_array_config.field_name, idx, related_array_config.id_field
+                            ))
+                        })?
+                        .to_string();
+
+                    // Get the element's label (if configured)
+                    let element_label =
+                        related_array_config.label_field.as_ref().and_then(|field| {
+                            element
+                                .get(field)
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                        });
+
+                    // Create and add the related node
+                    let related_node =
+                        Node::new(element_id.clone(), element_label, element.clone());
+                    let related_idx = graph.add_node(related_node);
+
+                    // Create edge from root to related node
+                    let rel_type = related_array_config.relationship_type.clone();
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "Creating edge: root_idx={}, related_idx={}, rel_type='{}'",
+                        root_idx, related_idx, rel_type
+                    );
+                    let edge = Edge::new(root_idx, related_idx, rel_type);
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "Edge created: from={}, to={}, rel_type='{}'",
+                        edge.from, edge.to, edge.rel_type
+                    );
+                    graph.add_edge(edge);
+                }
+            }
+        }
+    }
+
+    Ok(graph)
+}
+
 /// Navigate a JSON path to retrieve a value.
 ///
 /// Supports dot-notation paths like "data.users" or "users".
@@ -199,6 +293,7 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
+            root_object_config: None,
         };
 
         let graph = storage.load_graph_sync(&config).unwrap();
@@ -254,6 +349,7 @@ mod tests {
             id_field: "id".to_string(),
             label_field: None,
             relation_fields: vec!["friends".to_string()],
+            root_object_config: None,
         };
 
         let graph = storage.load_graph_sync(&config).unwrap();

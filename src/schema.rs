@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::config::GraphConfig;
+use crate::config::{GraphConfig, RelatedNodeArray, RootObjectConfig};
 
 /// Result type for schema detection.
 pub type SchemaResult<T> = std::result::Result<T, SchemaError>;
@@ -59,6 +59,36 @@ impl fmt::Display for FieldType {
     }
 }
 
+/// Detected schema for a root object that should be treated as a node.
+#[derive(Debug, Clone)]
+pub struct RootObjectSchema {
+    /// Path to the root object (typically empty string for root)
+    pub path: String,
+    /// Detected fields in the root object
+    pub fields: Vec<NodeFieldInfo>,
+    /// Recommended ID field for the root node
+    pub recommended_id_field: Option<String>,
+    /// Recommended label field for the root node
+    pub recommended_label_field: Option<String>,
+    /// Detected nested arrays that contain related nodes
+    pub related_node_arrays: Vec<RelatedNodeArraySchema>,
+}
+
+/// Schema for a nested array within a root object.
+#[derive(Debug, Clone)]
+pub struct RelatedNodeArraySchema {
+    /// Field name of the array
+    pub field_name: String,
+    /// Inferred relationship type (e.g., "claims" -> "HAS_CLAIM")
+    pub relationship_type: String,
+    /// Number of elements in the array
+    pub element_count: usize,
+    /// Recommended ID field for elements in this array
+    pub recommended_id_field: Option<String>,
+    /// Recommended label field for elements in this array
+    pub recommended_label_field: Option<String>,
+}
+
 /// Detected schema for a JSON array.
 #[derive(Debug, Clone)]
 pub struct ArraySchema {
@@ -83,6 +113,8 @@ pub struct SchemaDetection {
     pub array_schemas: Vec<ArraySchema>,
     /// Primary recommendation (the most suitable array for graph construction)
     pub primary_recommendation: Option<ArraySchema>,
+    /// Root object schema (if root should be treated as a node)
+    pub root_object_schema: Option<RootObjectSchema>,
 }
 
 impl SchemaDetection {
@@ -90,15 +122,57 @@ impl SchemaDetection {
     pub fn new(
         array_schemas: Vec<ArraySchema>,
         primary_recommendation: Option<ArraySchema>,
+        root_object_schema: Option<RootObjectSchema>,
     ) -> Self {
         Self {
             array_schemas,
             primary_recommendation,
+            root_object_schema,
         }
     }
 
     /// Get the best GraphConfig based on detected schema.
+    ///
+    /// If a root object schema is detected, it will be preferred over array schemas.
     pub fn to_graph_config(&self) -> Option<GraphConfig> {
+        // Prefer root object schema if present
+        if let Some(root_schema) = &self.root_object_schema {
+            let id_field = root_schema.recommended_id_field.clone()?;
+            let label_field = root_schema.recommended_label_field.clone();
+
+            // Convert related node array schemas to RelatedNodeArray configs
+            let related_node_arrays: Vec<RelatedNodeArray> = root_schema
+                .related_node_arrays
+                .iter()
+                .map(|arr| {
+                    RelatedNodeArray::new(
+                        arr.field_name.clone(),
+                        arr.relationship_type.clone(),
+                        arr.recommended_id_field
+                            .clone()
+                            .unwrap_or_else(|| "id".to_string()),
+                        arr.recommended_label_field.clone(),
+                    )
+                })
+                .collect();
+
+            let root_config = RootObjectConfig::new(
+                "Root", // Default label, can be overridden by users
+                id_field,
+                label_field,
+                related_node_arrays,
+            );
+
+            return Some(GraphConfig {
+                node_path: String::new(),
+                id_field: root_config.id_field.clone(),
+                label_field: root_config.label_field.clone(),
+                relation_fields: Vec::new(),
+                root_object_config: Some(root_config),
+            });
+        }
+
+        // Fall back to array-based schema
         let schema = &self.primary_recommendation.as_ref()?;
         let id_field = schema.recommended_id_field.clone()?;
         let label_field = schema.recommended_label_field.clone();
@@ -108,6 +182,7 @@ impl SchemaDetection {
             id_field,
             label_field,
             relation_fields: schema.recommended_relation_fields.clone(),
+            root_object_config: None,
         })
     }
 
@@ -122,6 +197,7 @@ impl SchemaDetection {
                     id_field,
                     label_field: schema.recommended_label_field.clone(),
                     relation_fields: schema.recommended_relation_fields.clone(),
+                    root_object_config: None,
                 })
             })
             .collect()
@@ -314,6 +390,23 @@ impl SchemaDetection {
     }
 }
 
+/// Infer a relationship type from a field name.
+///
+/// All nested arrays are treated as child nodes with a HAS_CHILD relationship.
+///
+/// # Examples
+///
+/// ```rust
+/// use cypher_rs::schema::infer_relationship_type;
+///
+/// assert_eq!(infer_relationship_type("claims"), "HAS_CHILD");
+/// assert_eq!(infer_relationship_type("description_paragraphs"), "HAS_CHILD");
+/// assert_eq!(infer_relationship_type("users"), "HAS_CHILD");
+/// ```
+pub fn infer_relationship_type(_field_name: &str) -> String {
+    "HAS_CHILD".to_string()
+}
+
 /// Schema analyzer for JSON documents.
 pub struct SchemaAnalyzer;
 
@@ -336,6 +429,18 @@ impl SchemaAnalyzer {
     /// let config = schema.to_graph_config().unwrap();
     /// ```
     pub fn analyze(data: &Value) -> SchemaResult<SchemaDetection> {
+        // First, check if the root is an object that should be treated as a node
+        if let Value::Object(root_obj) = data {
+            // Check for root object schema (root has arrays of related nodes)
+            let root_object_schema = detect_root_object_node(root_obj);
+
+            // If we detected a root object schema, use it
+            if let Some(root_schema) = root_object_schema {
+                return Ok(SchemaDetection::new(Vec::new(), None, Some(root_schema)));
+            }
+        }
+
+        // Fall back to array-based detection
         let mut array_schemas = Vec::new();
         find_arrays(data, "", &mut array_schemas);
 
@@ -346,7 +451,11 @@ impl SchemaAnalyzer {
         // Determine primary recommendation
         let primary_recommendation = select_primary_schema(&array_schemas);
 
-        Ok(SchemaDetection::new(array_schemas, primary_recommendation))
+        Ok(SchemaDetection::new(
+            array_schemas,
+            primary_recommendation,
+            None,
+        ))
     }
 
     /// Analyze JSON and automatically create a GraphConfig.
@@ -358,6 +467,147 @@ impl SchemaAnalyzer {
             .to_graph_config()
             .ok_or_else(|| SchemaError::InvalidJson("Could not infer graph config".to_string()))
     }
+}
+
+/// Detect if a root object should be treated as a node.
+///
+/// A root object should be treated as a node when:
+/// 1. It's an object (not an array)
+/// 2. It contains one or more arrays of objects
+/// 3. Those arrays have ID fields (they represent nodes)
+///
+/// This is typical for structures like:
+/// ```json
+/// {
+///   "id": "patent-123",
+///   "title": "My Patent",
+///   "claims": [{"id": "c1", ...}, {"id": "c2", ...}]
+/// }
+/// ```
+fn detect_root_object_node(root_obj: &serde_json::Map<String, Value>) -> Option<RootObjectSchema> {
+    let mut fields = Vec::new();
+    let mut related_arrays = Vec::new();
+
+    // Check if root has an ID field
+    let root_id_field = root_obj
+        .keys()
+        .find(|k| *k == "id" || k.contains("id"))
+        .cloned();
+
+    // If no ID field, this might not be a node-worthy object
+    let id_field = root_id_field?;
+
+    // Analyze each field in the root object
+    for (key, value) in root_obj {
+        match value {
+            Value::Array(arr) => {
+                // Check if this is an array of objects that could be related nodes
+                if !arr.is_empty() {
+                    if let Some(array_schema) = analyze_array_for_relation(key, arr) {
+                        related_arrays.push(array_schema);
+                    }
+                }
+            }
+            Value::String(_) | Value::Number(_) | Value::Bool(_) => {
+                // Primitive fields on the root object
+                let field_type = match value {
+                    Value::String(_) => FieldType::String,
+                    Value::Number(_) => FieldType::Number,
+                    Value::Bool(_) => FieldType::Boolean,
+                    _ => unreachable!(),
+                };
+                fields.push(NodeFieldInfo {
+                    name: key.clone(),
+                    field_type,
+                    is_id_candidate: key == "id" || key.contains("id"),
+                    is_label_candidate: matches!(key.as_str(), "type" | "role" | "kind"),
+                    is_relation_candidate: false,
+                });
+            }
+            Value::Object(_) => {
+                fields.push(NodeFieldInfo {
+                    name: key.clone(),
+                    field_type: FieldType::Object,
+                    is_id_candidate: false,
+                    is_label_candidate: false,
+                    is_relation_candidate: false,
+                });
+            }
+            Value::Null => {
+                // Skip null fields
+            }
+        }
+    }
+
+    // Only treat as root object node if we have related node arrays
+    if related_arrays.is_empty() {
+        return None;
+    }
+
+    // Recommend label field if found
+    let recommended_label_field = fields
+        .iter()
+        .find(|f| f.is_label_candidate)
+        .map(|f| f.name.clone());
+
+    Some(RootObjectSchema {
+        path: String::new(),
+        fields,
+        recommended_id_field: Some(id_field),
+        recommended_label_field,
+        related_node_arrays: related_arrays,
+    })
+}
+
+/// Analyze an array to determine if it represents related nodes.
+///
+/// Returns None if the array doesn't look like a collection of nodes.
+fn analyze_array_for_relation(field_name: &str, arr: &[Value]) -> Option<RelatedNodeArraySchema> {
+    // Must be non-empty
+    if arr.is_empty() {
+        return None;
+    }
+
+    // All elements should be objects
+    if !arr.iter().all(|v| v.is_object()) {
+        return None;
+    }
+
+    // Collect all fields across all elements
+    let mut all_fields: HashMap<String, usize> = HashMap::new();
+    for element in arr {
+        if let Value::Object(obj) = element {
+            for key in obj.keys() {
+                *all_fields.entry(key.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // Recommend ID field
+    let recommended_id_field = all_fields
+        .keys()
+        .find(|k| *k == "id" || k.contains("id"))
+        .cloned();
+
+    // We need an ID field to create nodes
+    let id_field = recommended_id_field?;
+
+    // Recommend label field
+    let recommended_label_field = all_fields
+        .keys()
+        .find(|k| matches!(k.as_str(), "type" | "role" | "kind" | "label"))
+        .cloned();
+
+    // Infer relationship type from field name
+    let relationship_type = infer_relationship_type(field_name);
+
+    Some(RelatedNodeArraySchema {
+        field_name: field_name.to_string(),
+        relationship_type,
+        element_count: arr.len(),
+        recommended_id_field: Some(id_field),
+        recommended_label_field,
+    })
 }
 
 /// Find all arrays in the JSON document.
