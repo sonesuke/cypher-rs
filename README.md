@@ -147,48 +147,28 @@ let engine = CypherEngine::from_json(&data, config)?;
 
 ### Root Objects as Nodes
 
-For hierarchical JSON data where the root object should be treated as a node with nested arrays of related nodes:
+For hierarchical JSON data where the root object should be treated as a node with nested arrays:
 
 ```rust
-use cypher_rs::{CypherEngine, GraphConfig, RootObjectConfig, RelatedNodeArray};
+use cypher_rs::CypherEngine;
 
 let data = json!({
     "id": "US1234567",
     "title": "Method for Processing Data",
-    "abstract_text": "A method for efficiently processing data...",
-    "assignee": "Tech Corp",
     "claims": [
         { "id": "claim-1", "number": "1", "text": "A method comprising..." },
         { "id": "claim-2", "number": "2", "text": "The method of claim 1..." }
-    ],
-    "description_paragraphs": [
-        { "id": "desc-1", "number": "1", "text": "The present invention relates to..." }
     ]
 });
 
-let root_config = RootObjectConfig::new(
-    "Patent",                           // Primary label for root node
-    "id",                               // ID field in root object
-    None,                              // Optional label field
-    vec![
-        RelatedNodeArray::new("claims", "HAS_CHILD", "id", None),
-        RelatedNodeArray::new("description_paragraphs", "HAS_CHILD", "id", None),
-    ],
-);
+// Default label is "Root"
+let engine = CypherEngine::from_json_auto_as_root(&data)?;
 
-let config = GraphConfig {
-    node_path: String::new(),          // Not used in root object mode
-    id_field: "id".to_string(),
-    label_field: None,
-    relation_fields: vec![],
-    root_object_config: Some(root_config),
-};
-
-let engine = CypherEngine::from_json(&data, config)?;
+// Or specify a custom label
+let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent")?;
 
 // Query the patent
 let result = engine.execute("MATCH (p:Patent) RETURN p.title")?;
-// Returns: "Method for Processing Data"
 
 // Traverse to claims
 let result = engine.execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) RETURN c.number")?;

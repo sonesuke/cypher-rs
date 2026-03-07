@@ -23,7 +23,6 @@
 //!     id_field: "id".to_string(),
 //!     label_field: Some("role".to_string()),
 //!     relation_fields: vec!["friends".to_string()],
-//!     root_object_config: None,
 //! };
 //!
 //! let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -50,12 +49,12 @@ pub mod schema;
 use serde_json::Value;
 use std::fmt;
 
-pub use config::{GraphConfig, RelatedNodeArray, RootObjectConfig};
+pub use config::GraphConfig;
 pub use engine::storage::SyncStorage;
 pub use engine::{EngineError, QueryResult, Result};
 pub use engine::{JsonStorage, MemoryStorage, MemoryStorageBuilder};
 pub use graph::{Edge, Graph, Node};
-pub use schema::{infer_relationship_type, SchemaAnalyzer, SchemaDetection, SchemaError};
+pub use schema::{SchemaAnalyzer, SchemaDetection, SchemaError};
 
 /// Error type for CypherEngine operations.
 #[derive(Debug)]
@@ -132,7 +131,6 @@ impl CypherEngine {
     ///     id_field: "id".to_string(),
     ///     label_field: Some("role".to_string()),
     ///     relation_fields: vec![],
-    ///     root_object_config: None,
     /// };
     ///
     /// let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -208,6 +206,78 @@ impl CypherEngine {
     pub fn analyze_schema(json: &Value) -> std::result::Result<SchemaDetection, CypherError> {
         schema::SchemaAnalyzer::analyze(json)
             .map_err(|e: schema::SchemaError| CypherError::GraphBuild(e.to_string()))
+    }
+
+    /// Create a new CypherEngine from JSON data, treating the root object as a node.
+    ///
+    /// This method treats the root JSON object as a node with label "Root",
+    /// and creates nodes from any nested arrays with HAS_CHILD relationships.
+    ///
+    /// # Arguments
+    ///
+    /// * `json` - The JSON data (must be an object with nested arrays)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cypher_rs::CypherEngine;
+    /// use serde_json::json;
+    ///
+    /// let data = json!({
+    ///     "id": "doc-1",
+    ///     "title": "My Document",
+    ///     "sections": [
+    ///         { "id": "s1", "heading": "Introduction" },
+    ///         { "id": "s2", "heading": "Conclusion" }
+    ///     ]
+    /// });
+    ///
+    /// let engine = CypherEngine::from_json_auto_as_root(&data).unwrap();
+    /// // Root node has label "Root"
+    /// let result = engine.execute("MATCH (r:Root) RETURN r.title").unwrap();
+    /// ```
+    pub fn from_json_auto_as_root(json: &Value) -> std::result::Result<Self, CypherError> {
+        use engine::storage::json::build_graph_from_root_object;
+        let graph = build_graph_from_root_object(json, "Root")
+            .map_err(|e| CypherError::GraphBuild(e.to_string()))?;
+        Ok(Self { graph })
+    }
+
+    /// Create a new CypherEngine from JSON data, treating the root object as a node with a custom label.
+    ///
+    /// This method treats the root JSON object as a node with the specified label,
+    /// and creates nodes from any nested arrays with HAS_CHILD relationships.
+    ///
+    /// # Arguments
+    ///
+    /// * `json` - The JSON data (must be an object with nested arrays)
+    /// * `label` - The label to use for the root node
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cypher_rs::CypherEngine;
+    /// use serde_json::json;
+    ///
+    /// let data = json!({
+    ///     "id": "US1234567",
+    ///     "title": "Method for Processing Data",
+    ///     "claims": [
+    ///         { "id": "claim-1", "number": "1", "text": "A method comprising..." }
+    ///     ]
+    /// });
+    ///
+    /// let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
+    /// let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
+    /// ```
+    pub fn from_json_auto_as_root_with_label(
+        json: &Value,
+        label: &str,
+    ) -> std::result::Result<Self, CypherError> {
+        use engine::storage::json::build_graph_from_root_object;
+        let graph = build_graph_from_root_object(json, label)
+            .map_err(|e| CypherError::GraphBuild(e.to_string()))?;
+        Ok(Self { graph })
     }
 
     /// Execute a Cypher query against the graph.
@@ -403,7 +473,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -436,7 +505,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
-            root_object_config: None,
         };
         let engine = CypherEngine::from_json(&data, config).unwrap();
 
@@ -463,7 +531,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -498,7 +565,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: None,
             relation_fields: vec!["friends".to_string()],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -530,7 +596,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -604,7 +669,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec![],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -737,7 +801,6 @@ mod tests {
             id_field: "id".to_string(),
             label_field: Some("role".to_string()),
             relation_fields: vec!["friends".to_string()],
-            root_object_config: None,
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -788,52 +851,60 @@ mod tests {
     }
 
     #[test]
-    fn test_root_object_creates_node() {
+    fn test_from_json_auto_as_root_default_label() {
         let data = json!({
-            "id": "patent-123",
-            "title": "Test Patent",
-            "claims": [
-                { "id": "c1", "text": "Claim 1" },
-                { "id": "c2", "text": "Claim 2" }
+            "id": "doc-1",
+            "title": "My Document",
+            "sections": [
+                { "id": "s1", "heading": "Introduction" },
+                { "id": "s2", "heading": "Conclusion" }
             ]
         });
 
-        let root_config = RootObjectConfig::new(
-            "Patent",
-            "id",
-            None,
-            vec![RelatedNodeArray::new("claims", "HAS_CHILD", "id", None)],
-        );
+        let engine = CypherEngine::from_json_auto_as_root(&data).unwrap();
 
-        let config = GraphConfig {
-            node_path: String::new(),
-            id_field: "id".to_string(),
-            label_field: None,
-            relation_fields: vec![],
-            root_object_config: Some(root_config),
-        };
+        // Should have 3 nodes: 1 Root + 2 Sections
+        assert_eq!(engine.graph().nodes.len(), 3);
 
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Should have 3 nodes: 1 Patent + 2 Claims
-        let result = engine.execute("MATCH (n) RETURN COUNT(n)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
-
-        // Root node should have the Patent label
-        let result = engine.execute("MATCH (p:Patent) RETURN COUNT(p)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
-
-        // Root node should have the title
-        let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
+        // Root node should have "Root" label
+        let result = engine.execute("MATCH (r:Root) RETURN r.title").unwrap();
         assert_eq!(result.rows.len(), 1);
+        assert_eq!(
+            result.rows[0].get("r.title"),
+            Some(&serde_json::json!("My Document"))
+        );
     }
 
     #[test]
-    fn test_nested_arrays_create_relationships() {
+    fn test_from_json_auto_as_root_with_custom_label() {
+        let data = json!({
+            "id": "US1234567",
+            "title": "Method for Processing Data",
+            "claims": [
+                { "id": "claim-1", "number": "1", "text": "A method comprising..." },
+                { "id": "claim-2", "number": "2", "text": "The method of claim 1..." }
+            ]
+        });
+
+        let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
+
+        // Should have 3 nodes: 1 Patent + 2 Claims
+        assert_eq!(engine.graph().nodes.len(), 3);
+
+        // Root node should have "Patent" label
+        let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(
+            result.rows[0].get("p.title"),
+            Some(&serde_json::json!("Method for Processing Data"))
+        );
+    }
+
+    #[test]
+    fn test_root_mode_with_nested_arrays() {
         let data = json!({
             "id": "patent-123",
             "title": "Test Patent",
-            "abstract_text": "An abstract",
             "claims": [
                 { "id": "c1", "number": "1", "text": "Claim 1" },
                 { "id": "c2", "number": "2", "text": "Claim 2" }
@@ -843,169 +914,18 @@ mod tests {
             ]
         });
 
-        let root_config = RootObjectConfig::new(
-            "Patent",
-            "id",
-            None,
-            vec![
-                RelatedNodeArray::new("claims", "HAS_CHILD", "id", None),
-                RelatedNodeArray::new("description_paragraphs", "HAS_CHILD", "id", None),
-            ],
-        );
-
-        let config = GraphConfig {
-            node_path: String::new(),
-            id_field: "id".to_string(),
-            label_field: None,
-            relation_fields: vec![],
-            root_object_config: Some(root_config),
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
+        let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
 
         // Should have 4 nodes: 1 Patent + 2 Claims + 1 DescriptionParagraph
-        let result = engine.execute("MATCH (n) RETURN COUNT(n)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(4));
+        assert_eq!(engine.graph().nodes.len(), 4);
 
-        // Debug: check individual node counts
-        let result = engine.execute("MATCH (p:Patent) RETURN COUNT(p)").unwrap();
-        assert_eq!(
-            result.get_single_value().unwrap().as_i64(),
-            Some(1),
-            "Should have 1 Patent node"
-        );
-
-        // Debug: check if we can access Patent properties
-        let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
-        assert_eq!(
-            result.rows.len(),
-            1,
-            "Should have 1 result for Patent title"
-        );
-        assert_eq!(
-            result.rows[0].get("p.title"),
-            Some(&serde_json::json!("Test Patent"))
-        );
-
-        // Should have 3 HAS_CHILD relationships (2 claims + 1 description_paragraph)
-        // Note: Using direct edge count since rel_type filter has query engine issues
-        let engine_ref = &engine;
-        assert_eq!(engine_ref.graph().edges.len(), 3);
+        // Should have 3 HAS_CHILD relationships
+        assert_eq!(engine.graph().edges.len(), 3);
 
         // Can traverse from Patent to children
         let result = engine
             .execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) RETURN COUNT(c)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
-    }
-
-    #[test]
-    fn test_backward_compatibility() {
-        // Array-based JSON should still work
-        let data = json!({
-            "users": [
-                { "id": "1", "role": "admin", "age": 30 },
-                { "id": "2", "role": "user", "age": 25 }
-            ]
-        });
-
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
-            relation_fields: vec![],
-            root_object_config: None,
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Should have 2 nodes
-        let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
-
-        // Should have correct labels
-        let result = engine.execute("MATCH (u:admin) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
-    }
-
-    #[test]
-    fn test_patent_json_structure() {
-        // Full Patent JSON example
-        let data = json!({
-            "id": "US1234567",
-            "title": "Method for Processing Data",
-            "abstract_text": "A method for efficiently processing data in a distributed system.",
-            "assignee": "Tech Corp",
-            "claims": [
-                { "id": "claim-1", "number": "1", "text": "A method comprising..." },
-                { "id": "claim-2", "number": "2", "text": "The method of claim 1, wherein..." },
-                { "id": "claim-3", "number": "3", "text": "The method of claim 2, further comprising..." }
-            ],
-            "description_paragraphs": [
-                { "id": "desc-1", "number": "1", "text": "The present invention relates to data processing." },
-                { "id": "desc-2", "number": "2", "text": "More specifically, it relates to distributed systems." }
-            ]
-        });
-
-        let root_config = RootObjectConfig::new(
-            "Patent",
-            "id",
-            None,
-            vec![
-                RelatedNodeArray::new("claims", "HAS_CHILD", "id", None),
-                RelatedNodeArray::new("description_paragraphs", "HAS_CHILD", "id", None),
-            ],
-        );
-
-        let config = GraphConfig {
-            node_path: String::new(),
-            id_field: "id".to_string(),
-            label_field: None,
-            relation_fields: vec![],
-            root_object_config: Some(root_config),
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Root Patent node should exist
-        let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(
-            result.rows[0].get("p.title"),
-            Some(&serde_json::json!("Method for Processing Data"))
-        );
-
-        // Should have 6 nodes total (1 Patent + 3 Claims + 2 DescriptionParagraphs)
-        let result = engine.execute("MATCH (n) RETURN COUNT(n)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(6));
-
-        // Should have 5 HAS_CHILD relationships (3 claims + 2 description_paragraphs)
-        // Note: Using direct edge count since rel_type filter has query engine issues
-        assert_eq!(engine.graph().edges.len(), 5);
-
-        // Can query claims by ID (since number="1" exists in both claims and description_paragraphs)
-        let result = engine
-            .execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) WHERE c.id = \"claim-1\" RETURN c.text")
-            .unwrap();
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(
-            result.rows[0].get("c.text"),
-            Some(&serde_json::json!("A method comprising..."))
-        );
-    }
-
-    #[test]
-    fn test_infer_relationship_type_returns_has_child() {
-        use crate::schema::infer_relationship_type;
-
-        // All field names should return HAS_CHILD
-        assert_eq!(infer_relationship_type("claims"), "HAS_CHILD");
-        assert_eq!(
-            infer_relationship_type("description_paragraphs"),
-            "HAS_CHILD"
-        );
-        assert_eq!(infer_relationship_type("users"), "HAS_CHILD");
-        assert_eq!(infer_relationship_type("items"), "HAS_CHILD");
-        assert_eq!(infer_relationship_type("children"), "HAS_CHILD");
     }
 }
