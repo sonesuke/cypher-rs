@@ -123,7 +123,7 @@ impl QueryExecutor {
                 _ => {
                     return Err(EngineError::ExecutionError(
                         "Mixed aggregate and non-aggregate in RETURN".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -221,10 +221,10 @@ impl QueryExecutor {
                 // Bind variable
                 if let Some(ref var) = node_pat.variable {
                     if let Some(entity) = bindings.get(var) {
-                        if let EntityId::Node(prev_idx) = entity {
-                            if *prev_idx == i {
-                                next_bindings.push(bindings.clone());
-                            }
+                        if let EntityId::Node(prev_idx) = entity
+                            && *prev_idx == i
+                        {
+                            next_bindings.push(bindings.clone());
                         }
                     } else {
                         let mut new_bindings = bindings.clone();

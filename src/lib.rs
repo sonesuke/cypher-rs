@@ -364,25 +364,25 @@ impl CypherEngine {
         // Output Properties per node type
         output.push_str("Properties:\n");
         for label in &label_names {
-            if let Some(nodes) = labels_by_label.get(label) {
-                if let Some(first_node) = nodes.first() {
-                    let mut properties: Vec<String> = Vec::new();
-                    if let Value::Object(obj) = &first_node.data {
-                        for (key, value) in obj {
-                            let type_str = match value {
-                                Value::String(_) => "STRING",
-                                Value::Number(_) => "NUMBER",
-                                Value::Bool(_) => "BOOLEAN",
-                                Value::Array(_) => "ARRAY",
-                                Value::Object(_) => "OBJECT",
-                                Value::Null => "NULL",
-                            };
-                            properties.push(format!("{}: {}", key, type_str));
-                        }
+            if let Some(nodes) = labels_by_label.get(label)
+                && let Some(first_node) = nodes.first()
+            {
+                let mut properties: Vec<String> = Vec::new();
+                if let Value::Object(obj) = &first_node.data {
+                    for (key, value) in obj {
+                        let type_str = match value {
+                            Value::String(_) => "STRING",
+                            Value::Number(_) => "NUMBER",
+                            Value::Bool(_) => "BOOLEAN",
+                            Value::Array(_) => "ARRAY",
+                            Value::Object(_) => "OBJECT",
+                            Value::Null => "NULL",
+                        };
+                        properties.push(format!("{}: {}", key, type_str));
                     }
-                    if !properties.is_empty() {
-                        output.push_str(&format!("  :{} {{{}}}\n", label, properties.join(", ")));
-                    }
+                }
+                if !properties.is_empty() {
+                    output.push_str(&format!("  :{} {{{}}}\n", label, properties.join(", ")));
                 }
             }
         }
@@ -744,9 +744,11 @@ mod tests {
         assert_eq!(primary.path, "users");
         assert_eq!(primary.recommended_id_field, Some("id".to_string()));
         assert_eq!(primary.recommended_label_field, Some("role".to_string()));
-        assert!(primary
-            .recommended_relation_fields
-            .contains(&"friends".to_string()));
+        assert!(
+            primary
+                .recommended_relation_fields
+                .contains(&"friends".to_string())
+        );
     }
 
     #[test]

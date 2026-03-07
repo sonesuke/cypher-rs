@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use cypher_rs::parser;
 
 fn bench_parse_simple(c: &mut Criterion) {
@@ -56,7 +56,10 @@ fn bench_parse_variable_query_size(c: &mut Criterion) {
 
     let queries = vec![
         ("short", "MATCH (n) RETURN n"),
-        ("medium", "MATCH (n:admin) WHERE n.age > 25 RETURN n.id, n.name"),
+        (
+            "medium",
+            "MATCH (n:admin) WHERE n.age > 25 RETURN n.id, n.name",
+        ),
         (
             "long",
             "MATCH (a:admin)-[:knows]->(b:user) WHERE a.age > 25 AND b.active = true RETURN a.id, b.id, a.role, b.role",

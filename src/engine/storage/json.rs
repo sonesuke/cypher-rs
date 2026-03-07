@@ -142,18 +142,18 @@ pub fn build_graph_from_json(json: &Value, config: &GraphConfig) -> StorageResul
             if let Some(rel_value) = node_json.get(rel_field) {
                 if let Some(rel_array) = rel_value.as_array() {
                     for to_id_val in rel_array {
-                        if let Some(to_id) = to_id_val.as_str() {
-                            if let Some(to_idx) = graph.get_node_index(to_id) {
-                                let edge = Edge::new(from_idx, to_idx, rel_field.clone());
-                                graph.add_edge(edge);
-                            }
+                        if let Some(to_id) = to_id_val.as_str()
+                            && let Some(to_idx) = graph.get_node_index(to_id)
+                        {
+                            let edge = Edge::new(from_idx, to_idx, rel_field.clone());
+                            graph.add_edge(edge);
                         }
                     }
-                } else if let Some(to_id) = rel_value.as_str() {
-                    if let Some(to_idx) = graph.get_node_index(to_id) {
-                        let edge = Edge::new(from_idx, to_idx, rel_field.clone());
-                        graph.add_edge(edge);
-                    }
+                } else if let Some(to_id) = rel_value.as_str()
+                    && let Some(to_idx) = graph.get_node_index(to_id)
+                {
+                    let edge = Edge::new(from_idx, to_idx, rel_field.clone());
+                    graph.add_edge(edge);
                 }
             }
         }
