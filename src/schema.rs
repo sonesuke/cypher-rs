@@ -29,8 +29,6 @@ pub struct NodeFieldInfo {
     pub field_type: FieldType,
     /// Whether this field could be an ID field
     pub is_id_candidate: bool,
-    /// Whether this field could be a label field
-    pub is_label_candidate: bool,
     /// Whether this field could be a relation field (contains array of IDs)
     pub is_relation_candidate: bool,
 }
@@ -72,8 +70,6 @@ pub struct ArraySchema {
     pub field_values: HashMap<String, HashSet<Value>>,
     /// Recommended ID field for this array
     pub recommended_id_field: Option<String>,
-    /// Recommended label field for this array
-    pub recommended_label_field: Option<String>,
     /// Fields that likely contain relationships (arrays of IDs)
     pub recommended_relation_fields: Vec<String>,
 }
@@ -103,12 +99,10 @@ impl SchemaDetection {
     pub fn to_graph_config(&self) -> Option<GraphConfig> {
         let schema = &self.primary_recommendation.as_ref()?;
         let id_field = schema.recommended_id_field.clone()?;
-        let label_field = schema.recommended_label_field.clone();
 
         Some(GraphConfig {
             node_path: schema.path.clone(),
             id_field,
-            label_field,
             relation_fields: schema.recommended_relation_fields.clone(),
         })
     }
@@ -124,62 +118,14 @@ impl SchemaDetection {
 
         output.push_str("Node Types:\n");
         for schema in &self.array_schemas {
-            if let Some(label_field) = &schema.recommended_label_field {
-                // Show unique labels found
-                let labels: Vec<String> = schema
-                    .field_values
-                    .get(label_field)
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect::<std::collections::HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-
-                for label in &labels {
-                    output.push_str(&format!("  (:{} {} nodes)\n", label, schema.element_count));
-                }
-            } else {
-                output.push_str(&format!(
-                    "  (:{} {} nodes)\n",
-                    schema.path, schema.element_count
-                ));
-            }
+            let label = schema.path.rsplit('.').next().unwrap_or(&schema.path);
+            output.push_str(&format!("  (:{} {} nodes)\n", label, schema.element_count));
         }
 
         output.push_str("\nProperties:\n");
         for schema in &self.array_schemas {
-            let prefix = if let Some(label_field) = &schema.recommended_label_field {
-                // Find most common label
-                let most_common_label = schema
-                    .field_values
-                    .get(label_field)
-                    .and_then(|values| {
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_str())
-                            .fold(HashMap::new(), |mut acc, label| {
-                                *acc.entry(label).or_insert(0) += 1;
-                                acc
-                            })
-                            .into_iter()
-                            .max_by_key(|(_, count)| *count)
-                            .map(|(label, _)| label.to_string())
-                    })
-                    .unwrap_or_else(|| schema.path.clone());
-
-                format!(":{}", most_common_label)
-            } else {
-                format!(":{}", schema.path)
-            };
-
-            output.push_str(&format!("{} {{", prefix));
+            let label = schema.path.rsplit('.').next().unwrap_or(&schema.path);
+            output.push_str(&format!(":{} {{", label));
 
             let mut field_strings: Vec<String> = schema
                 .fields
@@ -201,32 +147,9 @@ impl SchemaDetection {
         if has_relations {
             output.push_str("\nRelationship Types:\n");
             for schema in &self.array_schemas {
+                let label = schema.path.rsplit('.').next().unwrap_or(&schema.path);
                 for rel_field in &schema.recommended_relation_fields {
-                    let prefix = if let Some(label_field) = &schema.recommended_label_field {
-                        // Find most common label
-                        let most_common_label = schema
-                            .field_values
-                            .get(label_field)
-                            .and_then(|values| {
-                                values
-                                    .iter()
-                                    .filter_map(|v| v.as_str())
-                                    .fold(HashMap::new(), |mut acc, label| {
-                                        *acc.entry(label).or_insert(0) += 1;
-                                        acc
-                                    })
-                                    .into_iter()
-                                    .max_by_key(|(_, count)| *count)
-                                    .map(|(label, _)| label.to_string())
-                            })
-                            .unwrap_or_else(|| schema.path.clone());
-
-                        format!("(:{})-", most_common_label)
-                    } else {
-                        format!("(:{})-", schema.path)
-                    };
-
-                    output.push_str(&format!("{}[:{}]->()\n", prefix, rel_field));
+                    output.push_str(&format!("(:{})-[:{}]->()\n", label, rel_field));
                 }
             }
         }
@@ -239,44 +162,16 @@ impl SchemaDetection {
         let mut patterns = Vec::new();
 
         for schema in &self.array_schemas {
-            let pattern = if let Some(label_field) = &schema.recommended_label_field {
-                // Find most common label
-                let most_common_label = schema
-                    .field_values
-                    .get(label_field)
-                    .and_then(|values| {
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_str())
-                            .fold(HashMap::new(), |mut acc, label| {
-                                *acc.entry(label).or_insert(0) += 1;
-                                acc
-                            })
-                            .into_iter()
-                            .max_by_key(|(_, count)| *count)
-                            .map(|(label, _)| label.to_string())
-                    })
-                    .unwrap_or_else(|| schema.path.clone());
-
-                if !schema.recommended_relation_fields.is_empty() {
-                    format!(
-                        "(:{})-[{}]->(:{})",
-                        most_common_label,
-                        schema.recommended_relation_fields.join("|"),
-                        schema.path
-                    )
-                } else {
-                    format!("(:{})", most_common_label)
-                }
-            } else if !schema.recommended_relation_fields.is_empty() {
+            let label = schema.path.rsplit('.').next().unwrap_or(&schema.path);
+            let pattern = if !schema.recommended_relation_fields.is_empty() {
                 format!(
                     "(:{})-[{}]->(:{})",
-                    schema.path,
+                    label,
                     schema.recommended_relation_fields.join("|"),
-                    schema.path
+                    label
                 )
             } else {
-                format!("(:{})", schema.path)
+                format!("(:{})", label)
             };
 
             patterns.push(pattern);
@@ -384,12 +279,6 @@ fn find_arrays(data: &Value, current_path: &str, results: &mut Vec<ArraySchema>)
                     || field_name == "uuid"
                     || field_name == "_id";
 
-                // Check if this could be a label field
-                let is_label_candidate = matches!(
-                    field_name.as_str(),
-                    "type" | "role" | "kind" | "category" | "label" | "status"
-                );
-
                 // Check if this could be a relation field (array of IDs)
                 let is_relation_candidate = field_type == FieldType::Array && !is_id_candidate;
 
@@ -397,7 +286,6 @@ fn find_arrays(data: &Value, current_path: &str, results: &mut Vec<ArraySchema>)
                     name: field_name.clone(),
                     field_type,
                     is_id_candidate,
-                    is_label_candidate,
                     is_relation_candidate,
                 });
             }
@@ -406,12 +294,6 @@ fn find_arrays(data: &Value, current_path: &str, results: &mut Vec<ArraySchema>)
             let recommended_id_field = fields
                 .iter()
                 .find(|f| f.is_id_candidate)
-                .map(|f| f.name.clone());
-
-            // Find recommended label field
-            let recommended_label_field = fields
-                .iter()
-                .find(|f| f.is_label_candidate)
                 .map(|f| f.name.clone());
 
             // Find recommended relation fields
@@ -427,7 +309,6 @@ fn find_arrays(data: &Value, current_path: &str, results: &mut Vec<ArraySchema>)
                 fields,
                 field_values,
                 recommended_id_field,
-                recommended_label_field,
                 recommended_relation_fields,
             });
         }
@@ -493,10 +374,6 @@ mod tests {
         assert_eq!(users_schema.path, "users");
         assert_eq!(users_schema.element_count, 2);
         assert_eq!(users_schema.recommended_id_field, Some("id".to_string()));
-        assert_eq!(
-            users_schema.recommended_label_field,
-            Some("role".to_string())
-        );
     }
 
     #[test]
@@ -560,7 +437,6 @@ mod tests {
         let config = schema.to_graph_config().unwrap();
         assert_eq!(config.node_path, "users");
         assert_eq!(config.id_field, "id");
-        assert_eq!(config.label_field, Some("role".to_string()));
     }
 
     #[test]
