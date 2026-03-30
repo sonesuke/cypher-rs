@@ -20,6 +20,7 @@ query = { MATCH ~ pattern ~ (WHERE ~ where_clause)? ~ RETURN ~ return_clause }
 MATCH    = { ^"MATCH" }
 WHERE    = { ^"WHERE" }
 RETURN   = { ^"RETURN" }
+DISTINCT = { ^"DISTINCT" }
 AND      = { ^"AND" }
 OR       = { ^"OR" }
 CONTAINS = { ^"CONTAINS" }
@@ -78,7 +79,7 @@ where_clause = { expression }
 // Supports aliasing with AS.
 // Supports aggregate functions like COUNT(n) or SUM(n.property)
 //
-return_clause = { return_item ~ ("," ~ SP? ~ return_item)* }
+return_clause = { DISTINCT? ~ return_item ~ ("," ~ SP? ~ return_item)* }
 return_item = { expression ~ (AS ~ variable)? }
 
 //

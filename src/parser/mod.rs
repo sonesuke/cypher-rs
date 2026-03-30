@@ -28,6 +28,7 @@ pub fn parse_query(query_str: &str) -> Result<ast::Query> {
                 where_clause = Some(parse_where_clause(pair)?);
             }
             Rule::RETURN => {}
+            Rule::DISTINCT => {}
             Rule::return_clause => {
                 return_clause = Some(parse_return_clause(pair)?);
             }
@@ -144,12 +145,19 @@ fn parse_where_clause(pair: Pair<Rule>) -> Result<ast::WhereClause> {
 
 fn parse_return_clause(pair: Pair<Rule>) -> Result<ast::ReturnClause> {
     let mut items = Vec::new();
+    let mut distinct = false;
+
     for p in pair.into_inner() {
-        if p.as_rule() == Rule::return_item {
-            items.push(parse_return_item(p)?);
+        match p.as_rule() {
+            Rule::DISTINCT => distinct = true,
+            Rule::return_item => {
+                items.push(parse_return_item(p)?);
+            }
+            _ => {}
         }
     }
-    Ok(ast::ReturnClause { items })
+
+    Ok(ast::ReturnClause { distinct, items })
 }
 
 fn parse_return_item(pair: Pair<Rule>) -> Result<ast::ReturnItem> {
@@ -373,5 +381,20 @@ mod tests {
         let q = "MATCH (n) RETURN SUM(n.value)";
         let parsed = parse_query(q).unwrap();
         assert_eq!(parsed.return_clause.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_return_distinct() {
+        let q = "MATCH (p:Patent) WHERE p.assignee CONTAINS \"Toyota\" RETURN DISTINCT p.assignee";
+        let parsed = parse_query(q).unwrap();
+        assert!(parsed.return_clause.distinct);
+        assert_eq!(parsed.return_clause.items.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_return_no_distinct() {
+        let q = "MATCH (n) RETURN n.id";
+        let parsed = parse_query(q).unwrap();
+        assert!(!parsed.return_clause.distinct);
     }
 }
