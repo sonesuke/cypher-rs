@@ -21,7 +21,6 @@
 //! let config = GraphConfig {
 //!     node_path: "users".to_string(),
 //!     id_field: "id".to_string(),
-//!     label_field: Some("role".to_string()),
 //!     relation_fields: vec!["friends".to_string()],
 //! };
 //!
@@ -31,9 +30,9 @@
 //! let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
 //! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 //!
-//! // Count admins
-//! let result = engine.execute("MATCH (u:admin) RETURN COUNT(u)").unwrap();
-//! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
+//! // Match by label (derived from array key)
+//! let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
+//! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 //!
 //! // Sum ages
 //! let result = engine.execute("MATCH (u) RETURN SUM(u.age)").unwrap();
@@ -129,7 +128,6 @@ impl CypherEngine {
     /// let config = GraphConfig {
     ///     node_path: "users".to_string(),
     ///     id_field: "id".to_string(),
-    ///     label_field: Some("role".to_string()),
     ///     relation_fields: vec![],
     /// };
     ///
@@ -347,7 +345,7 @@ impl CypherEngine {
         let mut labels_by_label: std::collections::HashMap<String, Vec<&graph::Node>> =
             std::collections::HashMap::new();
         for node in &self.graph.nodes {
-            let label = node.label.as_ref().unwrap_or(&"Node".to_string()).clone();
+            let label = node.label.as_ref().unwrap().clone();
             labels_by_label.entry(label).or_default().push(node);
         }
 
@@ -402,16 +400,8 @@ impl CypherEngine {
             > = std::collections::HashMap::new();
 
             for edge in &self.graph.edges {
-                let from_label = self.graph.nodes[edge.from]
-                    .label
-                    .as_ref()
-                    .unwrap_or(&"Node".to_string())
-                    .clone();
-                let to_label = self.graph.nodes[edge.to]
-                    .label
-                    .as_ref()
-                    .unwrap_or(&"Node".to_string())
-                    .clone();
+                let from_label = self.graph.nodes[edge.from].label.as_ref().unwrap().clone();
+                let to_label = self.graph.nodes[edge.to].label.as_ref().unwrap().clone();
 
                 rel_types
                     .entry(edge.rel_type.clone())
@@ -471,7 +461,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec![],
         };
 
@@ -481,13 +471,9 @@ mod tests {
         let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
 
-        // Count admins
-        let result = engine.execute("MATCH (u:admin) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
-
-        // Count regular users
-        let result = engine.execute("MATCH (u:user) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
+        // Count by label (derived from array key)
+        let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
     }
 
     #[test]
@@ -503,7 +489,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec![],
         };
         let engine = CypherEngine::from_json(&data, config).unwrap();
@@ -512,9 +498,9 @@ mod tests {
         let result = engine.execute("MATCH (u) RETURN SUM(u.age)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(90));
 
-        // Sum admin ages
-        let result = engine.execute("MATCH (u:admin) RETURN SUM(u.age)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(65));
+        // Sum ages by label
+        let result = engine.execute("MATCH (u:users) RETURN SUM(u.age)").unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(90));
     }
 
     #[test]
@@ -529,7 +515,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec![],
         };
 
@@ -563,7 +549,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: None,
+
             relation_fields: vec!["friends".to_string()],
         };
 
@@ -594,7 +580,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "data.users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec![],
         };
 
@@ -667,15 +653,15 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec![],
         };
 
         let engine = CypherEngine::from_json(&data, config).unwrap();
 
-        // AND - admin and active
+        // AND - admin and active (using WHERE on property)
         let result = engine
-            .execute("MATCH (u:admin) WHERE u.active = \"true\" RETURN COUNT(u)")
+            .execute("MATCH (u) WHERE u.role = \"admin\" AND u.active = \"true\" RETURN COUNT(u)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
 
@@ -721,9 +707,9 @@ mod tests {
         let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 
-        // Label should be detected
-        let result = engine.execute("MATCH (u:admin) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
+        // Label should be derived from array key
+        let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
     }
 
     #[test]
@@ -743,7 +729,6 @@ mod tests {
         let primary = schema.primary_recommendation.as_ref().unwrap();
         assert_eq!(primary.path, "users");
         assert_eq!(primary.recommended_id_field, Some("id".to_string()));
-        assert_eq!(primary.recommended_label_field, Some("role".to_string()));
         assert!(
             primary
                 .recommended_relation_fields
@@ -767,7 +752,6 @@ mod tests {
         let primary = schema.primary_recommendation.as_ref().unwrap();
         assert_eq!(primary.path, "data.network.users");
         assert_eq!(primary.recommended_id_field, Some("id".to_string()));
-        assert_eq!(primary.recommended_label_field, Some("type".to_string()));
     }
 
     #[test]
@@ -801,7 +785,7 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
+
             relation_fields: vec!["friends".to_string()],
         };
 
@@ -811,8 +795,7 @@ mod tests {
         // Verify schema contains expected elements
         assert!(schema.contains("Graph Schema"));
         assert!(schema.contains("Node Types:"));
-        assert!(schema.contains("(:admin"));
-        assert!(schema.contains("(:user"));
+        assert!(schema.contains("(:users"));
         assert!(schema.contains("Relationship Types:"));
         assert!(schema.contains("friends"));
     }

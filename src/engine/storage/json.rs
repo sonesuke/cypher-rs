@@ -111,12 +111,7 @@ pub fn build_graph_from_json(json: &Value, config: &GraphConfig) -> StorageResul
             })?
             .to_string();
 
-        let label = config.label_field.as_ref().and_then(|field| {
-            node_json
-                .get(field)
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        });
+        let label = Some(config.label());
 
         let node = Node::new(id.clone(), label, node_json.clone());
         graph.add_node(node);
@@ -283,7 +278,6 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
             relation_fields: vec![],
         };
 
@@ -338,7 +332,6 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: None,
             relation_fields: vec!["friends".to_string()],
         };
 

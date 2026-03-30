@@ -146,7 +146,6 @@ mod tests {
         let config = GraphConfig {
             node_path: "users".to_string(),
             id_field: "id".to_string(),
-            label_field: Some("role".to_string()),
             relation_fields: vec![],
         };
 
