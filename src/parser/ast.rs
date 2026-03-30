@@ -114,6 +114,7 @@ pub enum Literal {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReturnClause {
+    pub distinct: bool,
     pub items: Vec<ReturnItem>,
 }
 

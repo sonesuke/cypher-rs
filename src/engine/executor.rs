@@ -78,7 +78,12 @@ impl QueryExecutor {
         if has_aggregate {
             Self::execute_aggregate_return(&query.return_clause, bindings_list, graph)
         } else {
-            Self::execute_normal_return(&query.return_clause, bindings_list, graph)
+            let mut result =
+                Self::execute_normal_return(&query.return_clause, bindings_list, graph)?;
+            if query.return_clause.distinct {
+                Self::deduplicate_rows(&mut result);
+            }
+            Ok(result)
         }
     }
 
@@ -166,6 +171,14 @@ impl QueryExecutor {
         }
 
         Ok(QueryResult { columns, rows })
+    }
+
+    fn deduplicate_rows(result: &mut QueryResult) {
+        let mut seen = std::collections::HashSet::new();
+        result.rows.retain(|row| {
+            let serialized = serde_json::to_string(row).unwrap_or_default();
+            seen.insert(serialized)
+        });
     }
 
     fn expression_column_name(expr: &ast::Expression) -> String {
@@ -505,5 +518,27 @@ mod tests {
         let parsed = parser::parse_query("MATCH (n) RETURN SUM(n.age)").unwrap();
         let result = QueryExecutor::execute(&parsed, &graph).unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(90));
+    }
+
+    #[test]
+    fn test_execute_distinct() {
+        let graph = create_test_graph();
+        let parsed = parser::parse_query("MATCH (n) RETURN DISTINCT n.role").unwrap();
+        assert!(parsed.return_clause.distinct);
+        let result = QueryExecutor::execute(&parsed, &graph).unwrap();
+        // Two nodes have role "admin" and one has "user", so DISTINCT should yield 2 rows
+        assert_eq!(result.rows.len(), 2);
+    }
+
+    #[test]
+    fn test_execute_distinct_deduplication() {
+        let mut graph = Graph::new();
+        graph.add_node(Node::new("1".to_string(), None, json!({"name": "Alice"})));
+        graph.add_node(Node::new("2".to_string(), None, json!({"name": "Alice"})));
+        graph.add_node(Node::new("3".to_string(), None, json!({"name": "Bob"})));
+
+        let parsed = parser::parse_query("MATCH (n) RETURN DISTINCT n.name").unwrap();
+        let result = QueryExecutor::execute(&parsed, &graph).unwrap();
+        assert_eq!(result.rows.len(), 2);
     }
 }
