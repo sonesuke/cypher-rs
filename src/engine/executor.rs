@@ -78,7 +78,8 @@ impl QueryExecutor {
         if has_aggregate {
             Self::execute_aggregate_return(&query.return_clause, bindings_list, graph)
         } else {
-            let mut result = Self::execute_normal_return(&query.return_clause, bindings_list, graph)?;
+            let mut result =
+                Self::execute_normal_return(&query.return_clause, bindings_list, graph)?;
             if query.return_clause.distinct {
                 Self::deduplicate_rows(&mut result);
             }
@@ -532,21 +533,9 @@ mod tests {
     #[test]
     fn test_execute_distinct_deduplication() {
         let mut graph = Graph::new();
-        graph.add_node(Node::new(
-            "1".to_string(),
-            None,
-            json!({"name": "Alice"}),
-        ));
-        graph.add_node(Node::new(
-            "2".to_string(),
-            None,
-            json!({"name": "Alice"}),
-        ));
-        graph.add_node(Node::new(
-            "3".to_string(),
-            None,
-            json!({"name": "Bob"}),
-        ));
+        graph.add_node(Node::new("1".to_string(), None, json!({"name": "Alice"})));
+        graph.add_node(Node::new("2".to_string(), None, json!({"name": "Alice"})));
+        graph.add_node(Node::new("3".to_string(), None, json!({"name": "Bob"})));
 
         let parsed = parser::parse_query("MATCH (n) RETURN DISTINCT n.name").unwrap();
         let result = QueryExecutor::execute(&parsed, &graph).unwrap();
