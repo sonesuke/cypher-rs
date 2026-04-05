@@ -17,7 +17,6 @@ pub use storage_trait::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GraphConfig;
     use serde_json::json;
 
     #[test]
@@ -29,21 +28,15 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
-            relation_fields: vec![],
-        };
-
-        // Test with JSON storage
+        // Test with JSON storage — now creates Root + 2 user nodes
         let json_storage = JsonStorage::from_value(data.clone());
-        let json_graph = json_storage.load_graph_sync(&config).unwrap();
-        assert_eq!(json_graph.nodes.len(), 2);
+        let json_graph = json_storage.load_graph_sync().unwrap();
+        assert_eq!(json_graph.nodes.len(), 3); // Root + 2 users
 
         // Test with memory storage
         let memory_storage = MemoryStorage::from_graph(json_graph.clone());
-        let memory_graph = memory_storage.load_graph_sync(&config).unwrap();
-        assert_eq!(memory_graph.nodes.len(), 2);
+        let memory_graph = memory_storage.load_graph_sync().unwrap();
+        assert_eq!(memory_graph.nodes.len(), 3);
     }
 
     #[test]

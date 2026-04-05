@@ -2,8 +2,6 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::config::GraphConfig;
-
 /// Result type for schema detection.
 pub type SchemaResult<T> = std::result::Result<T, SchemaError>;
 
@@ -74,37 +72,39 @@ pub struct ArraySchema {
     pub recommended_relation_fields: Vec<String>,
 }
 
+/// Schema for a root object that contains nested arrays.
+#[derive(Debug, Clone)]
+pub struct RootObjectSchema {
+    /// The recommended label for the root node
+    pub label: String,
+    /// Nested arrays found in the root object
+    pub nested_arrays: Vec<ArraySchema>,
+}
+
 /// Schema detection result for a JSON document.
 #[derive(Debug, Clone)]
 pub struct SchemaDetection {
     /// All detected array schemas
     pub array_schemas: Vec<ArraySchema>,
-    /// Primary recommendation (the most suitable array for graph construction)
-    pub primary_recommendation: Option<ArraySchema>,
+    /// Root object schema
+    pub root_object: Option<RootObjectSchema>,
 }
 
 impl SchemaDetection {
-    /// Create a new schema detection result.
-    pub fn new(
+    /// Create a schema detection result with root object info.
+    fn with_root_object(
         array_schemas: Vec<ArraySchema>,
-        primary_recommendation: Option<ArraySchema>,
+        root_object: RootObjectSchema,
     ) -> Self {
         Self {
             array_schemas,
-            primary_recommendation,
+            root_object: Some(root_object),
         }
     }
 
-    /// Convert to a GraphConfig using the primary recommendation.
-    pub fn to_graph_config(&self) -> Option<GraphConfig> {
-        let schema = &self.primary_recommendation.as_ref()?;
-        let id_field = schema.recommended_id_field.clone()?;
-
-        Some(GraphConfig {
-            node_path: schema.path.clone(),
-            id_field,
-            relation_fields: schema.recommended_relation_fields.clone(),
-        })
+    /// Whether this schema represents a root object.
+    pub fn is_root_object(&self) -> bool {
+        self.root_object.is_some()
     }
 
     /// Generate a Neo4j-style schema representation.
@@ -138,7 +138,6 @@ impl SchemaDetection {
             output.push_str("}\n");
         }
 
-        // Relationship types
         let has_relations = self
             .array_schemas
             .iter()
@@ -200,157 +199,119 @@ impl SchemaAnalyzer {
     /// });
     ///
     /// let schema = SchemaAnalyzer::analyze(&data).unwrap();
-    /// let config = schema.to_graph_config().unwrap();
+    /// assert!(schema.is_root_object());
     /// ```
     pub fn analyze(data: &Value) -> SchemaResult<SchemaDetection> {
-        let mut array_schemas = Vec::new();
-        find_arrays(data, "", &mut array_schemas);
+        let obj = data
+            .as_object()
+            .ok_or(SchemaError::NoArrayFound)?;
 
-        if array_schemas.is_empty() {
+        let root_schema = detect_root_object(obj);
+        if root_schema.nested_arrays.is_empty() {
             return Err(SchemaError::NoArrayFound);
         }
 
-        // Determine primary recommendation
-        let primary_recommendation = select_primary_schema(&array_schemas);
-
-        Ok(SchemaDetection::new(array_schemas, primary_recommendation))
-    }
-
-    /// Analyze JSON and automatically create a GraphConfig.
-    ///
-    /// This is a convenience method that combines analysis and config generation.
-    pub fn infer_graph_config(data: &Value) -> SchemaResult<GraphConfig> {
-        let detection = Self::analyze(data)?;
-        detection.to_graph_config().ok_or(SchemaError::NoArrayFound)
+        Ok(SchemaDetection::with_root_object(
+            root_schema.nested_arrays.clone(),
+            root_schema,
+        ))
     }
 }
 
-/// Find all arrays in the JSON document.
-fn find_arrays(data: &Value, current_path: &str, results: &mut Vec<ArraySchema>) {
-    match data {
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                return;
+/// Detect root object schema.
+fn detect_root_object(obj: &serde_json::Map<String, Value>) -> RootObjectSchema {
+    let mut nested_arrays = Vec::new();
+
+    for (key, value) in obj {
+        let elements: Vec<&Value> = match value {
+            Value::Array(arr) => {
+                if arr.is_empty() || !arr.first().map_or(false, |v| v.is_object()) {
+                    continue;
+                }
+                arr.iter().collect()
             }
+            Value::Object(_) => vec![value],
+            _ => continue,
+        };
 
-            // Analyze array elements
-            let mut all_fields: HashMap<String, usize> = HashMap::new();
-            let mut field_values: HashMap<String, HashSet<Value>> = HashMap::new();
-            let element_count = arr.len();
+        let mut all_fields: HashMap<String, usize> = HashMap::new();
+        let mut field_values: HashMap<String, HashSet<Value>> = HashMap::new();
+        let element_count = elements.len();
 
-            for element in arr {
-                if let Value::Object(obj) = element {
-                    for (key, value) in obj {
-                        *all_fields.entry(key.clone()).or_insert(0) += 1;
-                        field_values
-                            .entry(key.clone())
-                            .or_default()
-                            .insert(value.clone());
-                    }
+        for element in &elements {
+            if let Value::Object(elem_obj) = element {
+                for (fkey, fvalue) in elem_obj {
+                    *all_fields.entry(fkey.clone()).or_insert(0) += 1;
+                    field_values
+                        .entry(fkey.clone())
+                        .or_default()
+                        .insert(fvalue.clone());
                 }
             }
+        }
 
-            // Detect field types
-            let mut fields = Vec::new();
-            for field_name in all_fields.keys() {
-                // Determine field type based on values
-                let values = field_values.get(field_name);
-                let field_type = if let Some(vals) = values {
-                    if vals.iter().all(|v| v.is_string()) {
-                        FieldType::String
-                    } else if vals.iter().all(|v| v.is_i64() || v.is_u64() || v.is_f64()) {
-                        FieldType::Number
-                    } else if vals.iter().all(|v| v.is_boolean()) {
-                        FieldType::Boolean
-                    } else if vals.iter().all(|v| v.is_array()) {
-                        FieldType::Array
-                    } else if vals.iter().all(|v| v.is_object()) {
-                        FieldType::Object
-                    } else {
-                        FieldType::Null
-                    }
+        let mut fields = Vec::new();
+        for field_name in all_fields.keys() {
+            let values = field_values.get(field_name);
+            let field_type = if let Some(vals) = values {
+                if vals.iter().all(|v| v.is_string()) {
+                    FieldType::String
+                } else if vals.iter().all(|v| v.is_i64() || v.is_u64() || v.is_f64()) {
+                    FieldType::Number
+                } else if vals.iter().all(|v| v.is_boolean()) {
+                    FieldType::Boolean
+                } else if vals.iter().all(|v| v.is_array()) {
+                    FieldType::Array
+                } else if vals.iter().all(|v| v.is_object()) {
+                    FieldType::Object
                 } else {
                     FieldType::Null
-                };
+                }
+            } else {
+                FieldType::Null
+            };
 
-                // Check if this could be an ID field
-                let is_id_candidate = field_name.contains("id")
-                    || field_name == "key"
-                    || field_name == "uuid"
-                    || field_name == "_id";
+            let is_id_candidate = field_name.contains("id")
+                || field_name == "key"
+                || field_name == "uuid"
+                || field_name == "_id";
 
-                // Check if this could be a relation field (array of IDs)
-                let is_relation_candidate = field_type == FieldType::Array && !is_id_candidate;
+            let is_relation_candidate =
+                field_type == FieldType::Array && !is_id_candidate;
 
-                fields.push(NodeFieldInfo {
-                    name: field_name.clone(),
-                    field_type,
-                    is_id_candidate,
-                    is_relation_candidate,
-                });
-            }
-
-            // Find recommended ID field
-            let recommended_id_field = fields
-                .iter()
-                .find(|f| f.is_id_candidate)
-                .map(|f| f.name.clone());
-
-            // Find recommended relation fields
-            let recommended_relation_fields: Vec<String> = fields
-                .iter()
-                .filter(|f| f.is_relation_candidate)
-                .map(|f| f.name.clone())
-                .collect();
-
-            results.push(ArraySchema {
-                path: current_path.to_string(),
-                element_count,
-                fields,
-                field_values,
-                recommended_id_field,
-                recommended_relation_fields,
+            fields.push(NodeFieldInfo {
+                name: field_name.clone(),
+                field_type,
+                is_id_candidate,
+                is_relation_candidate,
             });
         }
-        Value::Object(obj) => {
-            for (key, value) in obj {
-                let new_path = if current_path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{}.{}", current_path, key)
-                };
-                find_arrays(value, &new_path, results);
-            }
-        }
-        _ => {}
-    }
-}
 
-/// Select the primary schema from detected schemas.
-fn select_primary_schema(schemas: &[ArraySchema]) -> Option<ArraySchema> {
-    if schemas.is_empty() {
-        return None;
-    }
+        let recommended_id_field = fields
+            .iter()
+            .find(|f| f.is_id_candidate)
+            .map(|f| f.name.clone());
 
-    // Prefer arrays that have an ID field
-    let with_id: Vec<_> = schemas
-        .iter()
-        .filter(|s| s.recommended_id_field.is_some())
-        .collect();
+        let recommended_relation_fields: Vec<String> = fields
+            .iter()
+            .filter(|f| f.is_relation_candidate)
+            .map(|f| f.name.clone())
+            .collect();
 
-    if with_id.is_empty() {
-        return Some(schemas[0].clone());
+        nested_arrays.push(ArraySchema {
+            path: key.clone(),
+            element_count,
+            fields,
+            field_values,
+            recommended_id_field,
+            recommended_relation_fields,
+        });
     }
 
-    // Among those with ID, prefer the shortest path (highest level)
-    let mut best = &with_id[0];
-    for schema in &with_id[1..] {
-        if schema.path.len() < best.path.len() {
-            best = schema;
-        }
+    RootObjectSchema {
+        label: "Root".to_string(),
+        nested_arrays,
     }
-
-    Some((*best).clone())
 }
 
 #[cfg(test)]
@@ -426,30 +387,62 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_graph_config() {
+    fn test_root_object_detection() {
         let data = json!({
-            "users": [
-                { "id": "1", "role": "admin", "age": 30 }
+            "id": "US123",
+            "title": "Test Patent",
+            "claims": [
+                { "id": "c1", "number": "1", "text": "Claim 1" },
+                { "id": "c2", "number": "2", "text": "Claim 2" }
             ]
         });
 
         let schema = SchemaAnalyzer::analyze(&data).unwrap();
-        let config = schema.to_graph_config().unwrap();
-        assert_eq!(config.node_path, "users");
-        assert_eq!(config.id_field, "id");
+        assert!(schema.is_root_object());
+
+        let root = schema.root_object.unwrap();
+        assert_eq!(root.label, "Root");
+        assert_eq!(root.nested_arrays.len(), 1);
+        assert_eq!(root.nested_arrays[0].path, "claims");
+        assert_eq!(root.nested_arrays[0].element_count, 2);
     }
 
     #[test]
-    fn test_nested_path() {
+    fn test_root_object_multiple_arrays() {
         let data = json!({
-            "data": {
-                "users": [
-                    { "id": "1", "name": "Alice" }
-                ]
-            }
+            "id": "doc-1",
+            "sections": [
+                { "id": "s1", "heading": "Intro" }
+            ],
+            "authors": [
+                { "id": "a1", "name": "Alice" }
+            ]
         });
 
         let schema = SchemaAnalyzer::analyze(&data).unwrap();
-        assert_eq!(schema.array_schemas[0].path, "data.users");
+        assert!(schema.is_root_object());
+
+        let root = schema.root_object.unwrap();
+        assert_eq!(root.nested_arrays.len(), 2);
+        let paths: Vec<&str> = root.nested_arrays.iter().map(|a| a.path.as_str()).collect();
+        assert!(paths.contains(&"sections"));
+        assert!(paths.contains(&"authors"));
+    }
+
+    #[test]
+    fn test_object_values() {
+        let data = json!({
+            "object1": { "prop1": "x", "prop2": "y" },
+            "object2": { "prop3": "z" }
+        });
+
+        let schema = SchemaAnalyzer::analyze(&data).unwrap();
+        assert!(schema.is_root_object());
+
+        let root = schema.root_object.unwrap();
+        assert_eq!(root.nested_arrays.len(), 2);
+        let paths: Vec<&str> = root.nested_arrays.iter().map(|a| a.path.as_str()).collect();
+        assert!(paths.contains(&"object1"));
+        assert!(paths.contains(&"object2"));
     }
 }

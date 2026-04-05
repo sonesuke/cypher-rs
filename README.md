@@ -6,12 +6,13 @@ Execute Cypher queries against in-memory JSON data with support for MATCH, WHERE
 
 ## Features
 
-- 🔍 **Cypher Query Support**: MATCH, WHERE, RETURN clauses
-- 📊 **Aggregate Functions**: COUNT, SUM
-- 🔗 **Relationship Traversal**: Query graph relationships
-- 🎯 **Automatic Schema Detection**: Auto-detects graph structure from JSON
-- 📋 **Schema Visualization**: Neo4j-style schema output
-- 💾 **Pluggable Storage**: JSON, in-memory, or custom storage backends
+- Cypher Query Support: MATCH, WHERE, RETURN clauses
+- Aggregate Functions: COUNT, SUM
+- Relationship Traversal: Query graph relationships
+- Automatic Schema Detection: Auto-detects graph structure from JSON
+- Universal JSON Support: Any JSON object is converted to a graph automatically
+- Schema Visualization: Neo4j-style schema output
+- Pluggable Storage: JSON, in-memory, or custom storage backends
 
 ## Quick Start
 
@@ -33,75 +34,86 @@ let engine = CypherEngine::from_json_auto(&data)?;
 println!("{}", engine.get_schema());
 
 // 3. Execute Cypher queries
-let result = engine.execute("MATCH (u:admin) RETURN u.name")?;
+let result = engine.execute("MATCH (u:users) RETURN u.name")?;
 ```
+
+## API Overview
+
+| Method | Description |
+|---|---|
+| `from_json_auto(json)` | Auto-detect schema from any JSON object |
+| `from_json_with_label(json, label)` | Specify a root node label |
 
 ## Usage
 
 ### 1. Load JSON Data
 
-The simplest way to get started is to use `from_json_auto`, which automatically analyzes your JSON structure:
+`from_json_auto` handles any JSON object — arrays become child nodes, objects become child nodes, scalars become properties:
 
 ```rust
-use cypher_rs::CypherEngine;
-use serde_json::json;
-
+// Simple array of objects
 let data = json!({
     "users": [
-        { "id": "1", "role": "admin", "name": "Alice", "age": 30 },
-        { "id": "2", "role": "user", "name": "Bob", "age": 25 }
+        { "id": "1", "name": "Alice", "age": 30 },
+        { "id": "2", "name": "Bob", "age": 25 }
     ]
 });
 
 let engine = CypherEngine::from_json_auto(&data)?;
+
+// Root-object with nested arrays (e.g., patent data)
+let patent = json!({
+    "id": "US123",
+    "title": "Method for Processing Data",
+    "claims": [
+        { "id": "c1", "number": "1", "text": "A method comprising..." },
+        { "id": "c2", "number": "2", "text": "The method of claim 1..." }
+    ]
+});
+
+let engine = CypherEngine::from_json_auto(&patent)?;
 ```
 
-### 2. View the Schema
+### 2. Specify Root Label
 
-Check what the engine detected from your data:
+Use `from_json_with_label` to give the root node a meaningful label:
+
+```rust
+let engine = CypherEngine::from_json_with_label(&patent, "Patent")?;
+
+// Query by label
+let result = engine.execute("MATCH (p:Patent) RETURN p.title")?;
+
+// Traverse to child nodes
+let result = engine.execute("MATCH (p:Patent)-[:claims]->(c) RETURN c.number")?;
+```
+
+### 3. View the Schema
 
 ```rust
 let schema = engine.get_schema();
 println!("{}", schema);
 ```
 
-Output:
-```
-Graph Schema
-============
-
-Node Types:
-  (:admin 1 nodes)
-  (:user 1 nodes)
-
-Properties:
-  :admin {id: STRING, role: STRING, name: STRING, age: NUMBER}
-  :user {id: STRING, role: STRING, name: STRING, age: NUMBER}
-```
-
-### 3. Execute Cypher Queries
+### 4. Execute Cypher Queries
 
 #### Count Nodes
 
 ```rust
 let result = engine.execute("MATCH (u) RETURN COUNT(u)")?;
 let count = result.get_single_value()?.as_i64()?;
-println!("Total users: {}", count); // Output: Total users: 2
 ```
 
 #### Filter by Label
 
 ```rust
-let result = engine.execute("MATCH (u:admin) RETURN u.name")?;
+let result = engine.execute("MATCH (u:users) RETURN u.name")?;
 ```
 
 #### Aggregate Properties
 
 ```rust
-// Sum ages
 let result = engine.execute("MATCH (u) RETURN SUM(u.age)")?;
-let total = result.get_single_value()?.as_i64()?;
-println!("Total age: {}", total);
 ```
 
 #### Query Relationships
@@ -128,100 +140,42 @@ let result = engine.execute("MATCH (u) WHERE u.role = \"admin\" AND u.age > \"25
 
 ## Advanced Usage
 
-### Manual Schema Configuration
-
-If auto-detection doesn't work for your data, you can manually specify the schema:
-
-```rust
-use cypher_rs::{CypherEngine, GraphConfig};
-
-let config = GraphConfig {
-    node_path: "data.users".to_string(),      // JSON path to node array
-    id_field: "id".to_string(),                 // Field containing unique ID
-    label_field: Some("role".to_string()),    // Field containing node label
-    relation_fields: vec!["friends".to_string()], // Fields containing relationship arrays
-};
-
-let engine = CypherEngine::from_json(&data, config)?;
-```
-
-### Root Objects as Nodes
-
-For hierarchical JSON data where the root object should be treated as a node with nested arrays:
-
-```rust
-use cypher_rs::CypherEngine;
-
-let data = json!({
-    "id": "US1234567",
-    "title": "Method for Processing Data",
-    "claims": [
-        { "id": "claim-1", "number": "1", "text": "A method comprising..." },
-        { "id": "claim-2", "number": "2", "text": "The method of claim 1..." }
-    ]
-});
-
-// Default label is "Root"
-let engine = CypherEngine::from_json_auto_as_root(&data)?;
-
-// Or specify a custom label
-let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent")?;
-
-// Query the patent
-let result = engine.execute("MATCH (p:Patent) RETURN p.title")?;
-
-// Traverse to claims
-let result = engine.execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) RETURN c.number")?;
-```
-
 ### Schema Analysis
 
 Get detailed schema information before creating the engine:
 
 ```rust
-use cypher_rs::CypherEngine;
-
 let detection = CypherEngine::analyze_schema(&data)?;
 
-// Neo4j-style schema
-println!("{}", detection.to_neo4j_schema());
-
-// Compact pattern representation
-println!("{}", detection.to_pattern());
-
-// Or convert to GraphConfig
-let config = detection.to_graph_config().unwrap();
+if detection.is_root_object() {
+    let root = detection.root_object.unwrap();
+    println!("Root label: {}", root.label);
+    for arr in &root.nested_arrays {
+        println!("  Nested array: {} ({} elements)", arr.path, arr.element_count);
+    }
+}
 ```
 
 ### Query Results
 
-#### Access Single Values (Aggregates)
-
 ```rust
+// Single value (aggregates)
 let result = engine.execute("MATCH (u) RETURN COUNT(u)")?;
 let value = result.get_single_value()?;
-println!("Count: {}", value.as_i64().unwrap());
-```
 
-#### Access Multiple Rows
-
-```rust
+// Multiple rows
 let result = engine.execute("MATCH (u) RETURN u.id, u.name")?;
 for row in &result.rows {
     println!("ID: {}, Name: {}", row["u.id"], row["u.name"]);
 }
-```
 
-#### Get Results as JSON
-
-```rust
-let result = engine.execute("MATCH (u) RETURN u.id, u.name")?;
+// As JSON
 let json_array = result.as_json_array();
 ```
 
 ## Cypher Support
 
-### Supported Clauses
+### Clauses
 
 - **MATCH**: Pattern matching on nodes and relationships
 - **WHERE**: Filtering with comparison operators
@@ -229,18 +183,11 @@ let json_array = result.as_json_array();
 
 ### Comparison Operators
 
-- `=` - Equal
-- `<>` - Not equal
-- `<` - Less than
-- `>` - Greater than
-- `<=` - Less than or equal
-- `>=` - Greater than or equal
-- `CONTAINS` - String contains
+`=`, `<>`, `<`, `>`, `<=`, `>=`, `CONTAINS`
 
 ### Logical Operators
 
-- `AND` - Logical AND
-- `OR` - Logical OR
+`AND`, `OR`
 
 ### Aggregate Functions
 
@@ -250,57 +197,14 @@ let json_array = result.as_json_array();
 ### Relationship Patterns
 
 ```cypher
-// Outgoing relationship
+// Outgoing
 MATCH (u)-[:rel_type]->(v)
 
-// Incoming relationship
+// Incoming
 MATCH (u)<-[:rel_type]-(v)
 
-// Undirected relationship
+// Undirected
 MATCH (u)-[:rel_type]-(v)
-```
-
-## Examples
-
-### Social Network
-
-```rust
-let data = json!({
-    "users": [
-        { "id": "1", "name": "Alice", "type": "Person", "friends": ["2", "3"] },
-        { "id": "2", "name": "Bob", "type": "Person", "friends": ["1"] },
-        { "id": "3", "name": "Charlie", "type": "Person", "friends": ["1", "2"] }
-    ]
-});
-
-let engine = CypherEngine::from_json_auto(&data)?;
-
-// Find friends of friends
-let result = engine.execute("MATCH (u)-[:friends]->(v)-[:friends]->(w) RETURN u.name, w.name")?;
-```
-
-### E-commerce Orders
-
-```rust
-let data = json!({
-    "orders": [
-        { "id": "o1", "customer": "c1", "amount": 100 },
-        { "id": "o2", "customer": "c1", "amount": 200 },
-        { "id": "o3", "customer": "c2", "amount": 150 }
-    ]
-});
-
-let config = GraphConfig {
-    node_path: "orders".to_string(),
-    id_field: "id".to_string(),
-    label_field: None,
-    relation_fields: vec![],
-};
-
-let engine = CypherEngine::from_json(&data, config)?;
-
-// Calculate total per customer
-let result = engine.execute("MATCH (o) RETURN o.customer, SUM(o.amount)")?;
 ```
 
 ## Project Structure
@@ -308,20 +212,12 @@ let result = engine.execute("MATCH (o) RETURN o.customer, SUM(o.amount)")?;
 ```
 src/
 ├── lib.rs              # Public API
-├── config.rs           # GraphConfig
 ├── graph.rs            # Graph, Node, Edge
 ├── parser/             # Cypher parser
-│   ├── mod.rs
-│   ├── ast.rs
-│   └── cypher.pest
 ├── engine/             # Query execution engine
-│   ├── executor.rs    # Core query executor
-│   ├── functions/      # Function evaluations
-│   │   └── aggregate.rs # COUNT, SUM
-│   └── storage/        # Storage backends
-│       ├── storage_trait.rs
-│       ├── json.rs
-│       └── memory.rs
+│   ├── executor.rs
+│   ├── functions/
+│   └── storage/
 └── schema.rs           # Schema detection
 ```
 

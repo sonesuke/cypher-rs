@@ -98,7 +98,6 @@ pub use storage::{StorageError, StorageFeature, StorageMetadata, StorageResult};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GraphConfig;
     use crate::graph::Node;
     use serde_json::json;
 
@@ -143,15 +142,10 @@ mod tests {
         });
 
         let storage = JsonStorage::from_value(data);
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
-            relation_fields: vec![],
-        };
 
-        let graph = storage.load_graph_sync(&config).unwrap();
+        let graph = storage.load_graph_sync().unwrap();
         let result = execute("MATCH (u) RETURN COUNT(u)", &graph).unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
     }
 
     #[test]
@@ -169,7 +163,7 @@ mod tests {
         ));
 
         let storage = MemoryStorage::from_graph(graph.clone());
-        let loaded_graph = storage.load_graph_sync(&GraphConfig::default()).unwrap();
+        let loaded_graph = storage.load_graph_sync().unwrap();
         assert_eq!(loaded_graph.nodes.len(), 2);
 
         let result = execute("MATCH (n) RETURN COUNT(n)", &graph).unwrap();

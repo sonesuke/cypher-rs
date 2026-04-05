@@ -1,4 +1,3 @@
-use crate::config::GraphConfig;
 use crate::graph::{Graph, Node};
 use async_trait::async_trait;
 
@@ -35,7 +34,7 @@ pub enum StorageError {
 #[async_trait]
 pub trait Storage: Send + Sync {
     /// Load a graph from the storage backend.
-    fn load_graph(&self, config: &GraphConfig) -> StorageResult<Graph>;
+    fn load_graph(&self) -> StorageResult<Graph>;
 
     /// Get a node by its ID.
     fn get_node(&self, id: &str) -> OptionalNodeResult;
@@ -99,7 +98,7 @@ impl StorageMetadata {
 /// backends that don't require async operations.
 pub trait SyncStorage: Send + Sync {
     /// Load a graph synchronously from the storage backend.
-    fn load_graph_sync(&self, config: &GraphConfig) -> StorageResult<Graph>;
+    fn load_graph_sync(&self) -> StorageResult<Graph>;
 
     /// Get a node by its ID synchronously.
     fn get_node_sync(&self, id: &str) -> StorageResult<Option<Node>>;
@@ -114,8 +113,8 @@ pub trait SyncStorage: Send + Sync {
 // Blanket implementation of Storage for SyncStorage
 #[async_trait]
 impl<T: SyncStorage + ?Sized> Storage for T {
-    fn load_graph(&self, config: &GraphConfig) -> StorageResult<Graph> {
-        self.load_graph_sync(config)
+    fn load_graph(&self) -> StorageResult<Graph> {
+        self.load_graph_sync()
     }
 
     fn get_node(&self, id: &str) -> OptionalNodeResult {
