@@ -64,6 +64,11 @@ if [ -z "$CI" ] && [ -z "$GITHUB_ACTIONS" ]; then
 EOF
     fi
 
+    echo "[Devcontainer Setup] Configuring gh credential helper..."
+    if command -v gh >/dev/null 2>&1; then
+        gh auth setup-git
+    fi
+
     echo "[Devcontainer Setup] Complete!"
 else
     echo "Running in CI environment, skipping development setup..."
