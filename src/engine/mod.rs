@@ -5,6 +5,7 @@
 
 pub mod executor;
 pub mod functions;
+pub mod result_processor;
 pub mod storage;
 
 use crate::graph::Graph;

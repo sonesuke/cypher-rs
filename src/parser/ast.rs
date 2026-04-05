@@ -5,6 +5,7 @@ pub struct Query {
     pub match_clause: MatchClause,
     pub where_clause: Option<WhereClause>,
     pub return_clause: ReturnClause,
+    pub order_by_clause: Option<OrderByClause>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,4 +123,21 @@ pub struct ReturnClause {
 pub struct ReturnItem {
     pub expression: Expression,
     pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderByClause {
+    pub items: Vec<SortItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SortItem {
+    pub expression: PropertyOrVariable,
+    pub direction: SortDirection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
 }

@@ -10,12 +10,19 @@ use pest_derive::Parser;
 struct CypherParser;
 
 pub fn parse_query(query_str: &str) -> Result<ast::Query> {
-    let pairs =
-        CypherParser::parse(Rule::query, query_str).map_err(|e| anyhow!("Parse error: {}", e))?;
+    let pairs = CypherParser::parse(Rule::query, query_str).map_err(|e| {
+        let unsupported = detect_unsupported_features(query_str);
+        if let Some(msg) = unsupported {
+            anyhow!("{}", msg)
+        } else {
+            anyhow!("Parse error: {}", e)
+        }
+    })?;
 
     let mut match_clause = None;
     let mut where_clause = None;
     let mut return_clause = None;
+    let mut order_by_clause = None;
 
     for pair in pairs.into_iter().next().unwrap().into_inner() {
         match pair.as_rule() {
@@ -32,6 +39,11 @@ pub fn parse_query(query_str: &str) -> Result<ast::Query> {
             Rule::return_clause => {
                 return_clause = Some(parse_return_clause(pair)?);
             }
+            Rule::ORDER => {}
+            Rule::BY => {}
+            Rule::order_by_clause => {
+                order_by_clause = Some(parse_order_by_clause(pair)?);
+            }
             _ => {}
         }
     }
@@ -40,7 +52,60 @@ pub fn parse_query(query_str: &str) -> Result<ast::Query> {
         match_clause: match_clause.ok_or_else(|| anyhow!("Missing MATCH clause"))?,
         where_clause,
         return_clause: return_clause.ok_or_else(|| anyhow!("Missing RETURN clause"))?,
+        order_by_clause,
     })
+}
+
+/// Detect unsupported Cypher keywords in the query and return a helpful error message.
+fn detect_unsupported_features(query_str: &str) -> Option<String> {
+    let upper = query_str.to_uppercase();
+    let unsupported = [
+        ("SKIP", "SKIP"),
+        ("LIMIT", "LIMIT"),
+        ("CREATE", "CREATE"),
+        ("MERGE", "MERGE"),
+        ("SET", "SET"),
+        ("DELETE", "DELETE"),
+        ("REMOVE", "REMOVE"),
+        ("WITH", "WITH"),
+        ("UNION", "UNION"),
+        ("CALL", "CALL"),
+        ("YIELD", "YIELD"),
+        ("LOAD", "LOAD CSV"),
+        ("FOREACH", "FOREACH"),
+        ("EXISTS", "EXISTS"),
+        ("CASE", "CASE"),
+        ("STARTS", "STARTS WITH"),
+        ("ENDS", "ENDS WITH"),
+        ("IN", " IN "),
+        ("IS NULL", "IS NULL"),
+        ("IS NOT NULL", "IS NOT NULL"),
+    ];
+
+    for (keyword, label) in unsupported {
+        // Match whole keywords only, not substrings
+        if upper.contains(&format!(" {} ", keyword))
+            || upper.starts_with(&format!("{} ", keyword))
+            || upper.ends_with(&format!(" {}", keyword))
+            || upper.contains(&format!("({}", keyword))
+            || upper.contains(&format!(",{}", keyword))
+        {
+            // Avoid false positives for already-supported keywords
+            if keyword == "SET" && !upper.contains(" RETURN ") {
+                // "SET" inside a JSON-like context, skip
+                continue;
+            }
+            if keyword == "IN" && upper.contains(" DISTINCT") {
+                continue;
+            }
+            return Some(format!(
+                "Unsupported feature: {}. Supported clauses: MATCH, WHERE, RETURN, ORDER BY.",
+                label
+            ));
+        }
+    }
+
+    None
 }
 
 fn parse_match_clause(pair: Pair<Rule>) -> Result<ast::MatchClause> {
@@ -175,6 +240,32 @@ fn parse_return_item(pair: Pair<Rule>) -> Result<ast::ReturnItem> {
     }
 
     Ok(ast::ReturnItem { expression, alias })
+}
+
+fn parse_order_by_clause(pair: Pair<Rule>) -> Result<ast::OrderByClause> {
+    let mut items = Vec::new();
+    for p in pair.into_inner() {
+        if p.as_rule() == Rule::sort_item {
+            let mut inner = p.into_inner();
+            let expr_pair = inner.next().unwrap();
+            let expression = parse_property_or_variable(expr_pair)?;
+
+            let direction = if let Some(dir_pair) = inner.next() {
+                match dir_pair.as_str().to_uppercase().as_str() {
+                    "DESC" => ast::SortDirection::Desc,
+                    _ => ast::SortDirection::Asc,
+                }
+            } else {
+                ast::SortDirection::Asc
+            };
+
+            items.push(ast::SortItem {
+                expression,
+                direction,
+            });
+        }
+    }
+    Ok(ast::OrderByClause { items })
 }
 
 fn parse_range_literal(pair: Pair<Rule>) -> Result<ast::Range> {
@@ -396,5 +487,77 @@ mod tests {
         let q = "MATCH (n) RETURN n.id";
         let parsed = parse_query(q).unwrap();
         assert!(!parsed.return_clause.distinct);
+    }
+
+    #[test]
+    fn test_parse_order_by_asc() {
+        let q = "MATCH (n) RETURN n.id ORDER BY n.id";
+        let parsed = parse_query(q).unwrap();
+        assert!(parsed.order_by_clause.is_some());
+        let order_by = parsed.order_by_clause.unwrap();
+        assert_eq!(order_by.items.len(), 1);
+        assert_eq!(order_by.items[0].expression.variable, "n");
+        assert_eq!(order_by.items[0].expression.property.as_deref(), Some("id"));
+        assert_eq!(order_by.items[0].direction, ast::SortDirection::Asc);
+    }
+
+    #[test]
+    fn test_parse_order_by_desc() {
+        let q = "MATCH (n) RETURN n.age ORDER BY n.age DESC";
+        let parsed = parse_query(q).unwrap();
+        let order_by = parsed.order_by_clause.unwrap();
+        assert_eq!(order_by.items.len(), 1);
+        assert_eq!(order_by.items[0].direction, ast::SortDirection::Desc);
+    }
+
+    #[test]
+    fn test_parse_order_by_multiple() {
+        let q = "MATCH (n) RETURN n.role, n.age ORDER BY n.role ASC, n.age DESC";
+        let parsed = parse_query(q).unwrap();
+        let order_by = parsed.order_by_clause.unwrap();
+        assert_eq!(order_by.items.len(), 2);
+        assert_eq!(order_by.items[0].direction, ast::SortDirection::Asc);
+        assert_eq!(order_by.items[1].direction, ast::SortDirection::Desc);
+    }
+
+    #[test]
+    fn test_parse_order_by_variable_only() {
+        let q = "MATCH (n) RETURN n ORDER BY n";
+        let parsed = parse_query(q).unwrap();
+        let order_by = parsed.order_by_clause.unwrap();
+        assert_eq!(order_by.items.len(), 1);
+        assert_eq!(order_by.items[0].expression.variable, "n");
+        assert!(order_by.items[0].expression.property.is_none());
+    }
+
+    #[test]
+    fn test_parse_no_order_by() {
+        let q = "MATCH (n) RETURN n.id";
+        let parsed = parse_query(q).unwrap();
+        assert!(parsed.order_by_clause.is_none());
+    }
+
+    #[test]
+    fn test_unsupported_feature_skip() {
+        let q = "MATCH (n) RETURN n SKIP 5";
+        let result = parse_query(q);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unsupported feature: SKIP"));
+    }
+
+    #[test]
+    fn test_unsupported_feature_limit() {
+        let q = "MATCH (n) RETURN n LIMIT 10";
+        let result = parse_query(q);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unsupported feature: LIMIT"));
+    }
+
+    #[test]
+    fn test_unsupported_feature_create() {
+        let q = "CREATE (n:User {name: \"Alice\"}) RETURN n";
+        let result = parse_query(q);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unsupported feature: CREATE"));
     }
 }
