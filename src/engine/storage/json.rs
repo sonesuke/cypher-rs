@@ -147,8 +147,7 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
                                 .map(String::from)
                                 .unwrap_or_else(|| field_name.clone());
 
-                            let ri =
-                                graph.add_node(Node::new(eid, Some(elabel), element.clone()));
+                            let ri = graph.add_node(Node::new(eid, Some(elabel), element.clone()));
                             graph.add_edge(Edge::new(root_idx, ri, field_name.clone()));
                         }
                     }
@@ -176,9 +175,7 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
                                             .or_else(|| elem_obj.get("_id"))
                                             .and_then(|v| v.as_str())
                                             .map(String::from)
-                                            .unwrap_or_else(|| {
-                                                format!("{}-{}", inner_key, idx)
-                                            });
+                                            .unwrap_or_else(|| format!("{}-{}", inner_key, idx));
                                         let elabel = elem_obj
                                             .get("type")
                                             .or_else(|| elem_obj.get("kind"))
@@ -191,18 +188,13 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
                                             Some(elabel),
                                             element.clone(),
                                         ));
-                                        graph.add_edge(Edge::new(
-                                            root_idx,
-                                            ri,
-                                            inner_key.clone(),
-                                        ));
+                                        graph.add_edge(Edge::new(root_idx, ri, inner_key.clone()));
                                     }
                                 }
                             }
                         } else if let Some(inner_obj) = inner_value.as_object() {
-                            let inner_pure = inner_obj
-                                .values()
-                                .all(|v| v.is_array() || v.is_object());
+                            let inner_pure =
+                                inner_obj.values().all(|v| v.is_array() || v.is_object());
                             if !inner_pure {
                                 // Leaf object → child node
                                 let eid = inner_obj
@@ -223,11 +215,7 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
                                     Some(elabel),
                                     inner_value.clone(),
                                 ));
-                                graph.add_edge(Edge::new(
-                                    root_idx,
-                                    ri,
-                                    inner_key.clone(),
-                                ));
+                                graph.add_edge(Edge::new(root_idx, ri, inner_key.clone()));
                             }
                         }
                     }
@@ -248,11 +236,7 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
                         .map(String::from)
                         .unwrap_or_else(|| field_name.clone());
 
-                    let ri = graph.add_node(Node::new(
-                        eid,
-                        Some(elabel),
-                        field_value.clone(),
-                    ));
+                    let ri = graph.add_node(Node::new(eid, Some(elabel), field_value.clone()));
                     graph.add_edge(Edge::new(root_idx, ri, field_name.clone()));
                 }
             }
@@ -270,11 +254,10 @@ pub fn build_graph_from_root_object(json: &Value, root_label: &str) -> StorageRe
             for (field_name, field_value) in data {
                 if let Some(id_array) = field_value.as_array() {
                     for id_val in id_array {
-                        if let Some(to_id) = id_val.as_str() {
-                            if let Some(to_idx) = graph.get_node_index(to_id) {
-                                inter_edges
-                                    .push((child_idx, to_idx, field_name.clone()));
-                            }
+                        if let Some(to_id) = id_val.as_str()
+                            && let Some(to_idx) = graph.get_node_index(to_id)
+                        {
+                            inter_edges.push((child_idx, to_idx, field_name.clone()));
                         }
                     }
                 }
@@ -354,8 +337,7 @@ mod tests {
         let graph = build_graph_from_root_object(&data, "Document").unwrap();
         assert_eq!(graph.edges.len(), 2);
 
-        let rel_types: Vec<&str> =
-            graph.edges.iter().map(|e| e.rel_type.as_str()).collect();
+        let rel_types: Vec<&str> = graph.edges.iter().map(|e| e.rel_type.as_str()).collect();
         assert!(rel_types.contains(&"sections"));
         assert!(rel_types.contains(&"authors"));
     }
@@ -377,8 +359,7 @@ mod tests {
         assert!(labels.contains(&"object1"));
         assert!(labels.contains(&"object2"));
 
-        let rel_types: Vec<&str> =
-            graph.edges.iter().map(|e| e.rel_type.as_str()).collect();
+        let rel_types: Vec<&str> = graph.edges.iter().map(|e| e.rel_type.as_str()).collect();
         assert!(rel_types.contains(&"object1"));
         assert!(rel_types.contains(&"object2"));
     }

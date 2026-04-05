@@ -396,7 +396,9 @@ mod tests {
 
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-        let result = engine.execute("MATCH (u)-[:friends]->(v) WHERE u.name = \"Alice\" RETURN v.name").unwrap();
+        let result = engine
+            .execute("MATCH (u)-[:friends]->(v) WHERE u.name = \"Alice\" RETURN v.name")
+            .unwrap();
         assert_eq!(result.rows.len(), 2);
     }
 
@@ -427,7 +429,9 @@ mod tests {
 
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-        let result = engine.execute("MATCH (u:users) RETURN u.id, u.name").unwrap();
+        let result = engine
+            .execute("MATCH (u:users) RETURN u.id, u.name")
+            .unwrap();
         let json_array = result.as_json_array();
 
         assert!(json_array.is_array());
@@ -475,12 +479,16 @@ mod tests {
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
         let result = engine
-            .execute("MATCH (u:users) WHERE u.role = \"admin\" AND u.active = \"true\" RETURN COUNT(u)")
+            .execute(
+                "MATCH (u:users) WHERE u.role = \"admin\" AND u.active = \"true\" RETURN COUNT(u)",
+            )
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
 
         let result = engine
-            .execute("MATCH (u:users) WHERE u.role = \"admin\" OR u.role = \"user\" RETURN COUNT(u)")
+            .execute(
+                "MATCH (u:users) WHERE u.role = \"admin\" OR u.role = \"user\" RETURN COUNT(u)",
+            )
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
     }

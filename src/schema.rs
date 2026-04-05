@@ -92,10 +92,7 @@ pub struct SchemaDetection {
 
 impl SchemaDetection {
     /// Create a schema detection result with root object info.
-    fn with_root_object(
-        array_schemas: Vec<ArraySchema>,
-        root_object: RootObjectSchema,
-    ) -> Self {
+    fn with_root_object(array_schemas: Vec<ArraySchema>, root_object: RootObjectSchema) -> Self {
         Self {
             array_schemas,
             root_object: Some(root_object),
@@ -202,9 +199,7 @@ impl SchemaAnalyzer {
     /// assert!(schema.is_root_object());
     /// ```
     pub fn analyze(data: &Value) -> SchemaResult<SchemaDetection> {
-        let obj = data
-            .as_object()
-            .ok_or(SchemaError::NoArrayFound)?;
+        let obj = data.as_object().ok_or(SchemaError::NoArrayFound)?;
 
         let root_schema = detect_root_object(obj);
         if root_schema.nested_arrays.is_empty() {
@@ -225,7 +220,7 @@ fn detect_root_object(obj: &serde_json::Map<String, Value>) -> RootObjectSchema 
     for (key, value) in obj {
         let elements: Vec<&Value> = match value {
             Value::Array(arr) => {
-                if arr.is_empty() || !arr.first().map_or(false, |v| v.is_object()) {
+                if arr.is_empty() || !arr.first().is_some_and(|v| v.is_object()) {
                     continue;
                 }
                 arr.iter().collect()
@@ -276,8 +271,7 @@ fn detect_root_object(obj: &serde_json::Map<String, Value>) -> RootObjectSchema 
                 || field_name == "uuid"
                 || field_name == "_id";
 
-            let is_relation_candidate =
-                field_type == FieldType::Array && !is_id_candidate;
+            let is_relation_candidate = field_type == FieldType::Array && !is_id_candidate;
 
             fields.push(NodeFieldInfo {
                 name: field_name.clone(),
