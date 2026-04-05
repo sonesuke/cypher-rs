@@ -14,19 +14,23 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 // Example: MATCH (n:UC) WHERE n.id = "UC_001" RETURN n
 // Example: MATCH (n) RETURN COUNT(n)
 //
-query = { MATCH ~ pattern ~ (WHERE ~ where_clause)? ~ RETURN ~ return_clause }
+query = { SOI ~ MATCH ~ pattern ~ (WHERE ~ where_clause)? ~ RETURN ~ return_clause ~ (ORDER ~ BY ~ order_by_clause)? ~ EOI }
 
 // Keywords (case-insensitive)
 MATCH    = { ^"MATCH" }
 WHERE    = { ^"WHERE" }
 RETURN   = { ^"RETURN" }
 DISTINCT = { ^"DISTINCT" }
-AND      = { ^"AND" }
-OR       = { ^"OR" }
-CONTAINS = { ^"CONTAINS" }
-AS       = { ^"AS" }
-COUNT    = { ^"COUNT" }
-SUM      = { ^"SUM" }
+ORDER    = { ^"ORDER" }
+BY       = { ^"BY" }
+ASC      = { ^"ASC" }
+DESC     = { ^"DESC" }
+AND      = @{ ^"AND" ~ !(ASCII_ALPHANUMERIC | "_") }
+OR       = @{ ^"OR" ~ !(ASCII_ALPHANUMERIC | "_") }
+CONTAINS = @{ ^"CONTAINS" ~ !(ASCII_ALPHANUMERIC | "_") }
+AS       = @{ ^"AS" ~ !(ASCII_ALPHANUMERIC | "_") }
+COUNT    = @{ ^"COUNT" ~ !(ASCII_ALPHANUMERIC | "_") }
+SUM      = @{ ^"SUM" ~ !(ASCII_ALPHANUMERIC | "_") }
 
 //
 // Pattern Matching
@@ -81,6 +85,17 @@ where_clause = { expression }
 //
 return_clause = { DISTINCT? ~ return_item ~ ("," ~ SP? ~ return_item)* }
 return_item = { expression ~ (AS ~ variable)? }
+
+//
+// Order By Clause
+//
+// Sorts the result set by one or more expressions.
+// Default direction is ascending (ASC).
+// Example: ORDER BY n.age DESC, n.name
+//
+order_by_clause = { sort_item ~ ("," ~ SP? ~ sort_item)* }
+sort_item = { property_or_variable ~ (SP? ~ sort_direction)? }
+sort_direction = { ASC | DESC }
 
 //
 // Expressions

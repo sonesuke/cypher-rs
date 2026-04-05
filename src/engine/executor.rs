@@ -81,7 +81,10 @@ impl QueryExecutor {
             let mut result =
                 Self::execute_normal_return(&query.return_clause, bindings_list, graph)?;
             if query.return_clause.distinct {
-                Self::deduplicate_rows(&mut result);
+                super::result_processor::deduplicate_rows(&mut result);
+            }
+            if let Some(order_by) = &query.order_by_clause {
+                super::result_processor::sort_rows(&mut result, order_by);
             }
             Ok(result)
         }
@@ -171,14 +174,6 @@ impl QueryExecutor {
         }
 
         Ok(QueryResult { columns, rows })
-    }
-
-    fn deduplicate_rows(result: &mut QueryResult) {
-        let mut seen = std::collections::HashSet::new();
-        result.rows.retain(|row| {
-            let serialized = serde_json::to_string(row).unwrap_or_default();
-            seen.insert(serialized)
-        });
     }
 
     fn expression_column_name(expr: &ast::Expression) -> String {
@@ -527,18 +522,6 @@ mod tests {
         assert!(parsed.return_clause.distinct);
         let result = QueryExecutor::execute(&parsed, &graph).unwrap();
         // Two nodes have role "admin" and one has "user", so DISTINCT should yield 2 rows
-        assert_eq!(result.rows.len(), 2);
-    }
-
-    #[test]
-    fn test_execute_distinct_deduplication() {
-        let mut graph = Graph::new();
-        graph.add_node(Node::new("1".to_string(), None, json!({"name": "Alice"})));
-        graph.add_node(Node::new("2".to_string(), None, json!({"name": "Alice"})));
-        graph.add_node(Node::new("3".to_string(), None, json!({"name": "Bob"})));
-
-        let parsed = parser::parse_query("MATCH (n) RETURN DISTINCT n.name").unwrap();
-        let result = QueryExecutor::execute(&parsed, &graph).unwrap();
         assert_eq!(result.rows.len(), 2);
     }
 }
