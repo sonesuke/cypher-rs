@@ -8,7 +8,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use cypher_rs::{CypherEngine, GraphConfig};
+//! use cypher_rs::CypherEngine;
 //! use serde_json::json;
 //!
 //! let data = json!({
@@ -18,28 +18,17 @@
 //!     ]
 //! });
 //!
-//! let config = GraphConfig {
-//!     node_path: "users".to_string(),
-//!     id_field: "id".to_string(),
-//!     relation_fields: vec!["friends".to_string()],
-//! };
-//!
-//! let engine = CypherEngine::from_json(&data, config).unwrap();
+//! let engine = CypherEngine::from_json_auto(&data).unwrap();
 //!
 //! // Count all users
-//! let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
-//! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
-//!
-//! // Match by label (derived from array key)
 //! let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
 //! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 //!
 //! // Sum ages
-//! let result = engine.execute("MATCH (u) RETURN SUM(u.age)").unwrap();
+//! let result = engine.execute("MATCH (u:users) RETURN SUM(u.age)").unwrap();
 //! assert_eq!(result.get_single_value().unwrap().as_i64(), Some(55));
 //! ```
 
-pub mod config;
 pub mod engine;
 pub mod graph;
 pub mod parser;
@@ -48,12 +37,11 @@ pub mod schema;
 use serde_json::Value;
 use std::fmt;
 
-pub use config::GraphConfig;
 pub use engine::storage::SyncStorage;
 pub use engine::{EngineError, QueryResult, Result};
 pub use engine::{JsonStorage, MemoryStorage, MemoryStorageBuilder};
 pub use graph::{Edge, Graph, Node};
-pub use schema::{SchemaAnalyzer, SchemaDetection, SchemaError};
+pub use schema::{RootObjectSchema, SchemaAnalyzer, SchemaDetection, SchemaError};
 
 /// Error type for CypherEngine operations.
 #[derive(Debug)]
@@ -86,7 +74,7 @@ impl From<EngineError> for CypherError {
 /// # Example
 ///
 /// ```rust
-/// use cypher_rs::{CypherEngine, GraphConfig};
+/// use cypher_rs::CypherEngine;
 /// use serde_json::json;
 ///
 /// let data = json!({
@@ -96,8 +84,7 @@ impl From<EngineError> for CypherError {
 ///     ]
 /// });
 ///
-/// let config = GraphConfig::minimal("users", "id");
-/// let engine = CypherEngine::from_json(&data, config).unwrap();
+/// let engine = CypherEngine::from_json_auto(&data).unwrap();
 /// let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
 /// ```
 pub struct CypherEngine {
@@ -105,51 +92,10 @@ pub struct CypherEngine {
 }
 
 impl CypherEngine {
-    /// Create a new CypherEngine from JSON data using the given configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON data to query
-    /// * `config` - Configuration for mapping JSON to graph structure
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use cypher_rs::{CypherEngine, GraphConfig};
-    /// use serde_json::json;
-    ///
-    /// let data = json!({
-    ///     "users": [
-    ///         { "id": "1", "role": "admin", "age": 30 },
-    ///         { "id": "2", "role": "user", "age": 25 }
-    ///     ]
-    /// });
-    ///
-    /// let config = GraphConfig {
-    ///     node_path: "users".to_string(),
-    ///     id_field: "id".to_string(),
-    ///     relation_fields: vec![],
-    /// };
-    ///
-    /// let engine = CypherEngine::from_json(&data, config).unwrap();
-    /// ```
-    pub fn from_json(json: &Value, config: GraphConfig) -> std::result::Result<Self, CypherError> {
-        let storage = engine::JsonStorage::from_value(json.clone());
-        let graph = storage
-            .load_graph_sync(&config)
-            .map_err(|e: engine::StorageError| CypherError::GraphBuild(e.to_string()))?;
-        Ok(Self { graph })
-    }
-
     /// Create a new CypherEngine from JSON data with automatic schema detection.
     ///
     /// This method automatically analyzes the JSON structure and infers the
-    /// appropriate GraphConfig, eliminating the need to manually specify
-    /// the node path, ID field, label field, and relation fields.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON data to query
+    /// appropriate graph. Works with any JSON object structure.
     ///
     /// # Example
     ///
@@ -168,88 +114,21 @@ impl CypherEngine {
     /// let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
     /// ```
     pub fn from_json_auto(json: &Value) -> std::result::Result<Self, CypherError> {
-        let config = schema::SchemaAnalyzer::infer_graph_config(json)
-            .map_err(|e: schema::SchemaError| CypherError::GraphBuild(e.to_string()))?;
-        Self::from_json(json, config)
-    }
-
-    /// Analyze JSON data and return schema detection information.
-    ///
-    /// This method provides detailed information about the detected schema,
-    /// including field types and recommendations for graph configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON data to analyze
-    ///
-    /// # Returns
-    ///
-    /// A `SchemaDetection` containing all detected arrays and recommendations.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use cypher_rs::CypherEngine;
-    /// use serde_json::json;
-    ///
-    /// let data = json!({
-    ///     "users": [
-    ///         { "id": "1", "role": "admin", "friends": ["2"] }
-    ///     ]
-    /// });
-    ///
-    /// let schema = CypherEngine::analyze_schema(&data).unwrap();
-    /// println!("Primary array: {}", schema.primary_recommendation.as_ref().unwrap().path);
-    /// ```
-    pub fn analyze_schema(json: &Value) -> std::result::Result<SchemaDetection, CypherError> {
-        schema::SchemaAnalyzer::analyze(json)
-            .map_err(|e: schema::SchemaError| CypherError::GraphBuild(e.to_string()))
-    }
-
-    /// Create a new CypherEngine from JSON data, treating the root object as a node.
-    ///
-    /// This method treats the root JSON object as a node with label "Root",
-    /// and creates nodes from any nested arrays with HAS_CHILD relationships.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON data (must be an object with nested arrays)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use cypher_rs::CypherEngine;
-    /// use serde_json::json;
-    ///
-    /// let data = json!({
-    ///     "id": "doc-1",
-    ///     "title": "My Document",
-    ///     "sections": [
-    ///         { "id": "s1", "heading": "Introduction" },
-    ///         { "id": "s2", "heading": "Conclusion" }
-    ///     ]
-    /// });
-    ///
-    /// let engine = CypherEngine::from_json_auto_as_root(&data).unwrap();
-    /// // Root node has label "Root"
-    /// let result = engine.execute("MATCH (r:Root) RETURN r.title").unwrap();
-    /// ```
-    pub fn from_json_auto_as_root(json: &Value) -> std::result::Result<Self, CypherError> {
         use engine::storage::json::build_graph_from_root_object;
-        let graph = build_graph_from_root_object(json, "Root")
+        let detection = schema::SchemaAnalyzer::analyze(json)
+            .map_err(|e: schema::SchemaError| CypherError::GraphBuild(e.to_string()))?;
+
+        let label = detection
+            .root_object
+            .as_ref()
+            .map(|r| r.label.as_str())
+            .unwrap_or("Root");
+        let graph = build_graph_from_root_object(json, label)
             .map_err(|e| CypherError::GraphBuild(e.to_string()))?;
         Ok(Self { graph })
     }
 
-    /// Create a new CypherEngine from JSON data, treating the root object as a node with a custom label.
-    ///
-    /// This method treats the root JSON object as a node with the specified label,
-    /// and creates nodes from any nested arrays with HAS_CHILD relationships.
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON data (must be an object with nested arrays)
-    /// * `label` - The label to use for the root node
+    /// Create a new CypherEngine from JSON data with a custom root label.
     ///
     /// # Example
     ///
@@ -265,10 +144,10 @@ impl CypherEngine {
     ///     ]
     /// });
     ///
-    /// let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
+    /// let engine = CypherEngine::from_json_with_label(&data, "Patent").unwrap();
     /// let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
     /// ```
-    pub fn from_json_auto_as_root_with_label(
+    pub fn from_json_with_label(
         json: &Value,
         label: &str,
     ) -> std::result::Result<Self, CypherError> {
@@ -278,31 +157,41 @@ impl CypherEngine {
         Ok(Self { graph })
     }
 
-    /// Execute a Cypher query against the graph.
-    ///
-    /// # Arguments
-    ///
-    /// * `query` - The Cypher query string to execute
-    ///
-    /// # Returns
-    ///
-    /// A `QueryResult` containing the query results.
+    /// Analyze JSON data and return schema detection information.
     ///
     /// # Example
     ///
     /// ```rust
-    /// # use cypher_rs::{CypherEngine, GraphConfig};
+    /// use cypher_rs::CypherEngine;
+    /// use serde_json::json;
+    ///
+    /// let data = json!({
+    ///     "users": [
+    ///         { "id": "1", "role": "admin", "friends": ["2"] }
+    ///     ]
+    /// });
+    ///
+    /// let schema = CypherEngine::analyze_schema(&data).unwrap();
+    /// assert!(schema.is_root_object());
+    /// let root = schema.root_object.unwrap();
+    /// println!("Nested array: {}", root.nested_arrays[0].path);
+    /// ```
+    pub fn analyze_schema(json: &Value) -> std::result::Result<SchemaDetection, CypherError> {
+        schema::SchemaAnalyzer::analyze(json)
+            .map_err(|e: schema::SchemaError| CypherError::GraphBuild(e.to_string()))
+    }
+
+    /// Execute a Cypher query against the graph.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use cypher_rs::CypherEngine;
     /// # use serde_json::json;
     /// # let data = json!({"users": [{"id": "1", "role": "admin", "age": 30}]});
-    /// # let config = GraphConfig::minimal("users", "id");
-    /// # let engine = CypherEngine::from_json(&data, config).unwrap();
-    /// // Execute a COUNT query
+    /// # let engine = CypherEngine::from_json_auto(&data).unwrap();
     /// let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
-    ///
-    /// // Execute a SUM query
     /// let result = engine.execute("MATCH (u) RETURN SUM(u.age)").unwrap();
-    ///
-    /// // Execute a simple SELECT query
     /// let result = engine.execute("MATCH (u) RETURN u.id, u.role").unwrap();
     /// ```
     pub fn execute(&self, query: &str) -> Result<QueryResult> {
@@ -316,17 +205,13 @@ impl CypherEngine {
 
     /// Get the Neo4j-style schema representation of this engine's graph.
     ///
-    /// This analyzes the current graph structure and returns a formatted
-    /// string representation similar to Neo4j's schema visualization.
-    ///
     /// # Example
     ///
     /// ```rust
-    /// # use cypher_rs::{CypherEngine, GraphConfig};
+    /// # use cypher_rs::CypherEngine;
     /// # use serde_json::json;
-    /// # let data = json!({"users": [{"id": "1", "role": "admin", "friends": ["2"]}]});
-    /// # let config = GraphConfig::minimal("users", "id");
-    /// # let engine = CypherEngine::from_json(&data, config).unwrap();
+    /// # let data = json!({"users": [{"id": "1", "role": "admin"}]});
+    /// # let engine = CypherEngine::from_json_auto(&data).unwrap();
     /// let schema = engine.get_schema();
     /// println!("{}", schema);
     /// ```
@@ -349,7 +234,6 @@ impl CypherEngine {
             labels_by_label.entry(label).or_default().push(node);
         }
 
-        // Output Node Types
         output.push_str("Node Types:\n");
         let mut label_names: Vec<String> = labels_by_label.keys().cloned().collect();
         label_names.sort();
@@ -359,7 +243,6 @@ impl CypherEngine {
         }
         output.push('\n');
 
-        // Output Properties per node type
         output.push_str("Properties:\n");
         for label in &label_names {
             if let Some(nodes) = labels_by_label.get(label)
@@ -386,11 +269,9 @@ impl CypherEngine {
         }
         output.push('\n');
 
-        // Output Relationship Types
         if !self.graph.edges.is_empty() {
             output.push_str("Relationship Types:\n");
 
-            // Group relationships by type
             let mut rel_types: std::collections::HashMap<
                 String,
                 (
@@ -458,20 +339,8 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-            relation_fields: vec![],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Count all users
-        let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
-
-        // Count by label (derived from array key)
         let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
     }
@@ -486,19 +355,8 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-            relation_fields: vec![],
-        };
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Sum all ages
-        let result = engine.execute("MATCH (u) RETURN SUM(u.age)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(90));
-
-        // Sum ages by label
         let result = engine.execute("MATCH (u:users) RETURN SUM(u.age)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(90));
     }
@@ -512,25 +370,15 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-            relation_fields: vec![],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Return all ids
-        let result = engine.execute("MATCH (u) RETURN u.id").unwrap();
+        let result = engine.execute("MATCH (u:users) RETURN u.id").unwrap();
         assert_eq!(result.rows.len(), 2);
-        // IDs are returned as numbers when they're numeric
         assert_eq!(result.rows[0]["u.id"], 1);
         assert_eq!(result.rows[1]["u.id"], 2);
 
-        // Return with WHERE
         let result = engine
-            .execute("MATCH (u) WHERE u.name = \"Alice\" RETURN u.id")
+            .execute("MATCH (u:users) WHERE u.name = \"Alice\" RETURN u.id")
             .unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0]["u.id"], 1);
@@ -546,22 +394,10 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-            relation_fields: vec!["friends".to_string()],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // Count relationships
-        let result = engine.execute("MATCH (u)-[]->(v) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
-
-        // Find Alice's friends
         let result = engine
-            .execute("MATCH (u)-[]->(v) WHERE u.name = \"Alice\" RETURN v.name")
+            .execute("MATCH (u)-[:friends]->(v) WHERE u.name = \"Alice\" RETURN v.name")
             .unwrap();
         assert_eq!(result.rows.len(), 2);
     }
@@ -577,15 +413,8 @@ mod tests {
             }
         });
 
-        let config = GraphConfig {
-            node_path: "data.users".to_string(),
-            id_field: "id".to_string(),
-
-            relation_fields: vec![],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-        let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
+        let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
     }
 
@@ -598,10 +427,11 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig::minimal("users", "id");
-        let engine = CypherEngine::from_json(&data, config).unwrap();
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-        let result = engine.execute("MATCH (u) RETURN u.id, u.name").unwrap();
+        let result = engine
+            .execute("MATCH (u:users) RETURN u.id, u.name")
+            .unwrap();
         let json_array = result.as_json_array();
 
         assert!(json_array.is_array());
@@ -618,24 +448,20 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig::minimal("items", "id");
-        let engine = CypherEngine::from_json(&data, config).unwrap();
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-        // Greater than
         let result = engine
-            .execute("MATCH (i) WHERE i.value > \"15\" RETURN COUNT(i)")
+            .execute("MATCH (i:items) WHERE i.value > \"15\" RETURN COUNT(i)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 
-        // Less than or equal
         let result = engine
-            .execute("MATCH (i) WHERE i.value <= \"20\" RETURN COUNT(i)")
+            .execute("MATCH (i:items) WHERE i.value <= \"20\" RETURN COUNT(i)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
 
-        // Not equal
         let result = engine
-            .execute("MATCH (i) WHERE i.value <> \"20\" RETURN COUNT(i)")
+            .execute("MATCH (i:items) WHERE i.value <> \"20\" RETURN COUNT(i)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
     }
@@ -650,24 +476,19 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-            relation_fields: vec![],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
-
-        // AND - admin and active (using WHERE on property)
         let result = engine
-            .execute("MATCH (u) WHERE u.role = \"admin\" AND u.active = \"true\" RETURN COUNT(u)")
+            .execute(
+                "MATCH (u:users) WHERE u.role = \"admin\" AND u.active = \"true\" RETURN COUNT(u)",
+            )
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
 
-        // OR - admin or user
         let result = engine
-            .execute("MATCH (u) WHERE u.role = \"admin\" OR u.role = \"user\" RETURN COUNT(u)")
+            .execute(
+                "MATCH (u:users) WHERE u.role = \"admin\" OR u.role = \"user\" RETURN COUNT(u)",
+            )
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
     }
@@ -682,11 +503,10 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig::minimal("users", "id");
-        let engine = CypherEngine::from_json(&data, config).unwrap();
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
 
         let result = engine
-            .execute("MATCH (u) WHERE u.name CONTAINS \"Smith\" RETURN COUNT(u)")
+            .execute("MATCH (u:users) WHERE u.name CONTAINS \"Smith\" RETURN COUNT(u)")
             .unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
     }
@@ -700,16 +520,32 @@ mod tests {
             ]
         });
 
-        // Auto-detect schema
         let engine = CypherEngine::from_json_auto(&data).unwrap();
 
-        // Should correctly infer the schema
-        let result = engine.execute("MATCH (u) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
+        // Root + 2 user nodes = 3 total
+        let result = engine.execute("MATCH (n) RETURN COUNT(n)").unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
 
-        // Label should be derived from array key
+        // Label derived from array key
         let result = engine.execute("MATCH (u:users) RETURN COUNT(u)").unwrap();
         assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
+    }
+
+    #[test]
+    fn test_from_json_auto_with_relations() {
+        let data = json!({
+            "users": [
+                { "id": "1", "name": "Alice", "friends": ["2", "3"] },
+                { "id": "2", "name": "Bob", "friends": ["1"] },
+                { "id": "3", "name": "Charlie", "friends": ["2"] }
+            ]
+        });
+
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
+
+        // friends: 1->2, 1->3, 2->1, 3->2 = 4 + 3 root->user = 7
+        let result = engine.execute("MATCH (u)-[]->(v) RETURN COUNT(u)").unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(7));
     }
 
     #[test]
@@ -722,18 +558,11 @@ mod tests {
         });
 
         let schema = CypherEngine::analyze_schema(&data).unwrap();
+        assert!(schema.is_root_object());
 
-        assert_eq!(schema.array_schemas.len(), 1);
-        assert!(schema.primary_recommendation.is_some());
-
-        let primary = schema.primary_recommendation.as_ref().unwrap();
-        assert_eq!(primary.path, "users");
-        assert_eq!(primary.recommended_id_field, Some("id".to_string()));
-        assert!(
-            primary
-                .recommended_relation_fields
-                .contains(&"friends".to_string())
-        );
+        let root = schema.root_object.unwrap();
+        assert_eq!(root.nested_arrays.len(), 1);
+        assert_eq!(root.nested_arrays[0].path, "users");
     }
 
     #[test]
@@ -749,27 +578,10 @@ mod tests {
         });
 
         let schema = CypherEngine::analyze_schema(&data).unwrap();
-        let primary = schema.primary_recommendation.as_ref().unwrap();
-        assert_eq!(primary.path, "data.network.users");
-        assert_eq!(primary.recommended_id_field, Some("id".to_string()));
-    }
-
-    #[test]
-    fn test_from_json_auto_with_relations() {
-        let data = json!({
-            "users": [
-                { "id": "1", "name": "Alice", "friends": ["2", "3"] },
-                { "id": "2", "name": "Bob", "friends": ["1"] },
-                { "id": "3", "name": "Charlie", "friends": ["2"] }
-            ]
-        });
-
-        let engine = CypherEngine::from_json_auto(&data).unwrap();
-
-        // Test relationship queries
-        // 1->2, 1->3, 2->1, 3->2 = 4 edges total
-        let result = engine.execute("MATCH (u)-[]->(v) RETURN COUNT(u)").unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(4));
+        assert!(schema.is_root_object());
+        let root = schema.root_object.unwrap();
+        assert_eq!(root.nested_arrays[0].path, "data");
+        assert_eq!(root.nested_arrays[0].element_count, 1);
     }
 
     #[test]
@@ -782,17 +594,9 @@ mod tests {
             ]
         });
 
-        let config = GraphConfig {
-            node_path: "users".to_string(),
-            id_field: "id".to_string(),
-
-            relation_fields: vec!["friends".to_string()],
-        };
-
-        let engine = CypherEngine::from_json(&data, config).unwrap();
+        let engine = CypherEngine::from_json_auto(&data).unwrap();
         let schema = engine.get_schema();
 
-        // Verify schema contains expected elements
         assert!(schema.contains("Graph Schema"));
         assert!(schema.contains("Node Types:"));
         assert!(schema.contains("(:users"));
@@ -812,7 +616,6 @@ mod tests {
         let schema = CypherEngine::analyze_schema(&data).unwrap();
         let neo4j_schema = schema.to_neo4j_schema();
 
-        // Verify Neo4j-style schema contains expected elements
         assert!(neo4j_schema.contains("Graph Schema"));
         assert!(neo4j_schema.contains("Node Types:"));
         assert!(neo4j_schema.contains("Relationship Types:"));
@@ -830,13 +633,12 @@ mod tests {
         let schema = CypherEngine::analyze_schema(&data).unwrap();
         let pattern = schema.to_pattern();
 
-        // Pattern should contain relationship
         assert!(pattern.contains("friends"));
         assert!(pattern.contains(":users"));
     }
 
     #[test]
-    fn test_from_json_auto_as_root_default_label() {
+    fn test_from_json_with_label() {
         let data = json!({
             "id": "doc-1",
             "title": "My Document",
@@ -846,12 +648,10 @@ mod tests {
             ]
         });
 
-        let engine = CypherEngine::from_json_auto_as_root(&data).unwrap();
+        let engine = CypherEngine::from_json_with_label(&data, "Root").unwrap();
 
-        // Should have 3 nodes: 1 Root + 2 Sections
         assert_eq!(engine.graph().nodes.len(), 3);
 
-        // Root node should have "Root" label
         let result = engine.execute("MATCH (r:Root) RETURN r.title").unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(
@@ -861,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn test_from_json_auto_as_root_with_custom_label() {
+    fn test_from_json_with_label_patent() {
         let data = json!({
             "id": "US1234567",
             "title": "Method for Processing Data",
@@ -871,12 +671,10 @@ mod tests {
             ]
         });
 
-        let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
+        let engine = CypherEngine::from_json_with_label(&data, "Patent").unwrap();
 
-        // Should have 3 nodes: 1 Patent + 2 Claims
         assert_eq!(engine.graph().nodes.len(), 3);
 
-        // Root node should have "Patent" label
         let result = engine.execute("MATCH (p:Patent) RETURN p.title").unwrap();
         assert_eq!(result.rows.len(), 1);
         assert_eq!(
@@ -886,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn test_root_mode_with_nested_arrays() {
+    fn test_from_json_with_label_multiple_arrays() {
         let data = json!({
             "id": "patent-123",
             "title": "Test Patent",
@@ -899,18 +697,19 @@ mod tests {
             ]
         });
 
-        let engine = CypherEngine::from_json_auto_as_root_with_label(&data, "Patent").unwrap();
+        let engine = CypherEngine::from_json_with_label(&data, "Patent").unwrap();
 
-        // Should have 4 nodes: 1 Patent + 2 Claims + 1 DescriptionParagraph
         assert_eq!(engine.graph().nodes.len(), 4);
-
-        // Should have 3 HAS_CHILD relationships
         assert_eq!(engine.graph().edges.len(), 3);
 
-        // Can traverse from Patent to children
         let result = engine
-            .execute("MATCH (p:Patent)-[:HAS_CHILD]->(c) RETURN COUNT(c)")
+            .execute("MATCH (p:Patent)-[:claims]->(c) RETURN COUNT(c)")
             .unwrap();
-        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(3));
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(2));
+
+        let result = engine
+            .execute("MATCH (p:Patent)-[:description_paragraphs]->(c) RETURN COUNT(c)")
+            .unwrap();
+        assert_eq!(result.get_single_value().unwrap().as_i64(), Some(1));
     }
 }

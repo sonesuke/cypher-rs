@@ -77,7 +77,9 @@ impl Node {
             data,
         }
     }
+}
 
+impl Node {
     /// Get a property value from the node's data.
     pub fn get_property(&self, key: &str) -> Option<&Value> {
         self.data.get(key)

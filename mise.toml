@@ -14,7 +14,7 @@ run = "cargo llvm-cov --lcov --output-path lcov.info --features integration-test
 
 [tasks.clippy]
 description = "Run clippy with auto-fix"
-run = "cargo clippy --fix --allow-dirty --allow-staged -- -D warnings"
+run = "cargo clippy --all-targets --fix --allow-dirty --allow-staged -- -D warnings"
 
 [tasks.fmt]
 description = "Format code"

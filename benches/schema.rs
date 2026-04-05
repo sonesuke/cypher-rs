@@ -141,13 +141,6 @@ fn bench_analyze_variable_array_count(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_infer_graph_config(c: &mut Criterion) {
-    let data = create_simple_schema_data();
-    c.bench_function("infer_graph_config", |b| {
-        b.iter(|| SchemaAnalyzer::infer_graph_config(std::hint::black_box(&data)));
-    });
-}
-
 fn bench_to_neo4j_schema(c: &mut Criterion) {
     let data = create_simple_schema_data();
     let schema = SchemaAnalyzer::analyze(&data).unwrap();
@@ -167,7 +160,6 @@ criterion_group!(
     bench_analyze_variable_field_count,
     bench_analyze_variable_nesting_depth,
     bench_analyze_variable_array_count,
-    bench_infer_graph_config,
     bench_to_neo4j_schema,
 );
 

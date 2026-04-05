@@ -1,5 +1,4 @@
 use super::storage_trait::{StorageFeature, StorageMetadata, StorageResult, SyncStorage};
-use crate::config::GraphConfig;
 use crate::graph::{Graph, Node};
 use std::sync::Arc;
 
@@ -64,9 +63,7 @@ impl MemoryStorage {
 }
 
 impl SyncStorage for MemoryStorage {
-    fn load_graph_sync(&self, _config: &GraphConfig) -> StorageResult<Graph> {
-        // Return a clone of the cached graph
-        // Note: This clones the Graph structure but not the Node data (which uses Arc internally)
+    fn load_graph_sync(&self) -> StorageResult<Graph> {
         Ok(Graph {
             nodes: self.graph.nodes.clone(),
             edges: self.graph.edges.clone(),
@@ -141,8 +138,7 @@ mod tests {
     #[test]
     fn test_memory_storage_empty() {
         let storage = MemoryStorage::empty();
-        let config = GraphConfig::minimal("users", "id");
-        let graph = storage.load_graph_sync(&config).unwrap();
+        let graph = storage.load_graph_sync().unwrap();
         assert_eq!(graph.nodes.len(), 0);
     }
 
@@ -161,7 +157,7 @@ mod tests {
         ));
 
         let storage = MemoryStorage::from_graph(graph);
-        let loaded_graph = storage.load_graph_sync(&GraphConfig::default()).unwrap();
+        let loaded_graph = storage.load_graph_sync().unwrap();
         assert_eq!(loaded_graph.nodes.len(), 2);
     }
 
@@ -195,7 +191,7 @@ mod tests {
             ))
             .build();
 
-        let graph = storage.load_graph_sync(&GraphConfig::default()).unwrap();
+        let graph = storage.load_graph_sync().unwrap();
         assert_eq!(graph.nodes.len(), 2);
     }
 
